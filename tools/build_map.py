@@ -772,36 +772,49 @@ ROOMS = [
     (24, 3, 42, 10, "wood_dark"),    # auditório (topo)
     (44, 3, 57, 10, "tile_gray"),    # recepção (entrada)
     (24, 12, 57, 44, "wood_light"),  # salão principal
-    (8, 18, 22, 40, "wood_dark"),    # ala de reuniões (esquerda)
-    (8, 41, 22, 44, "wood_light"),   # faixa de passagem
+    (8, 18, 22, 24, "wood_dark"),    # sala de reunião 1
+    (8, 26, 22, 32, "wood_dark"),    # sala de reunião 2
+    (8, 34, 22, 40, "wood_dark"),    # sala de reunião 3
+    (8, 42, 22, 44, "wood_light"),   # faixa de passagem
     (59, 12, 64, 17, "wood_dark"),   # escritório 1
     (66, 12, 72, 17, "wood_dark"),   # escritório Dra Júlia
     (59, 19, 72, 20, "wood_light"),  # corredor
     (59, 22, 72, 31, "tile_gray"),   # lunchroom
     (59, 33, 66, 44, "wood_light"),  # jurídico - Silvio
     (50, 46, 66, 54, "wood_dark"),   # sala do dono (diretoria)
-    (24, 46, 48, 55, "wood_light"),  # sala inferior
+    (24, 46, 31, 55, "wood_dark"),   # sala de reunião 4
+    (33, 46, 39, 55, "wood_dark"),   # sala de reunião 5
+    (41, 46, 48, 55, "wood_dark"),   # sala de reunião 6
 ]
 CORRIDOR = {(x, y) for x in range(59, 73) for y in (19, 20)}   # corredor aberto: sem face de parede
 DOORS = ([(x, 11) for x in (32, 33, 34)] + [(x, 11) for x in (53, 54, 55)]          # auditório, recepção
          + [(45, 2), (46, 2)]                                                        # porta da rua
-         + [(23, y) for y in range(26, 45)]                                          # ala de reuniões
+         + [(23, 21), (23, 22), (23, 29), (23, 30), (23, 37), (23, 38)]           # portas das salas de reunião
+         + [(23, y) for y in range(42, 45)]                                          # faixa de passagem
+         + [(14, 45), (15, 45)]                                                      # porta para o pátio externo
          + [(61, 18), (69, 18), (58, 19), (58, 20), (58, 27), (58, 28), (58, 37), (58, 38)]
-         + [(x, 45) for x in range(33, 39)] + [(55, 45), (56, 45)])                 # sala inferior, diretoria
+         + [(27, 45), (28, 45), (36, 45), (37, 45), (44, 45), (45, 45)]           # salas de reunião de baixo
+         + [(55, 45), (56, 45)])                                                     # diretoria
 
 FACE_DECOR = {
     (25, 12): "green", (26, 12): "green", (44, 12): "green", (45, 12): "green", (57, 12): "tv",
     (10, 18): "green", (11, 18): "green", (12, 18): "green", (13, 18): "green",
     (17, 18): "board", (18, 18): "board",
+    (10, 26): "green", (11, 26): "green", (17, 26): "board", (18, 26): "board",
+    (10, 34): "green", (11, 34): "green", (17, 34): "board", (18, 34): "board",
     (69, 22): "tv", (70, 22): "tv", (71, 22): "tv",
     (63, 33): "art", (64, 46): "art",
-    **{(x, 46): "blue" for x in (26, 29, 41, 44, 47)},
+    **{(x, 46): "blue" for x in (25, 30, 42, 47)},
+    (34, 46): "board", (38, 46): "board",
 }
 
 WORK_COLS = (26, 31, 36, 41)          # x da mesa (3x2 tiles); a cadeira fica em (x + 1, y + 2)
 WORK_ROWS = (15, 20, 25, 32, 37)      # 5 fileiras de 4 mesas no salão
-MEETING_ROWS = (15, 23, 31, 39)       # mesas de reunião do salão (2x2, coluna x 48-49)
-WING_ROWS = (21, 29, 37)              # mesas da ala de reuniões (3x2, x 13-15)
+WING_ROWS = (21, 29, 37)              # mesas das salas de reunião (3x2, x 13-15)
+MEETING_ROOMS = [(8, 18, 22, 24), (8, 26, 22, 32), (8, 34, 22, 40),       # salas da esquerda
+                 (24, 46, 31, 55), (33, 46, 39, 55), (41, 46, 48, 55)]     # salas de baixo
+
+PATIO = {(x, y) for x in range(8, 22) for y in range(47, 53)}   # pátio de convivência, saindo pela faixa
 
 LABELS = [("Dra Júlia", 69.5, 20),
           ("LUNCHROOM", 65.5, 30), ("JURÍDICO - SILVIO", 62.5, 43),
@@ -812,9 +825,8 @@ LOGO_WALLS = [(49, 3, 6), (51, 46, 4)]  # x, y, largura: parede da recepção e 
 
 AREAS = (
     [("Auditório", 24, 3, 42, 10, {"jitsiRoom": "auditorio"})]
-    + [(f"Reunião {i}", 12, r - 1, 16, r + 2, {"jitsiRoom": f"reuniao-{i}"}) for i, r in enumerate(WING_ROWS, 1)]
-    + [(f"Reunião salão {i}", 47, r - 1, 50, r + 2, {"jitsiRoom": f"reuniao-salao-{i}"})
-       for i, r in enumerate(MEETING_ROWS, 1)]
+    # Jitsi só em salas fechadas: a área cobre a sala inteira (quem passa no corredor não entra)
+    + [(f"Reunião {i}", x0, y0, x1, y1, {"jitsiRoom": f"reuniao-{i}"}) for i, (x0, y0, x1, y1) in enumerate(MEETING_ROOMS, 1)]
     + [("Lunchroom", 59, 22, 72, 31, {"silent": True})]
 )
 
@@ -847,9 +859,10 @@ def build():
     # ---- terreno externo
     water_cells = {(0, y) for y in range(10, H)}
     water_cells |= {(x, y) for y in range(H) for x in range(W)
-                    if ((x - 11.5) / 7.2) ** 2 + ((y - 56.5) / 6.2) ** 2 <= 1}
+                    if ((x - 13) / 7.5) ** 2 + ((y - 59) / 4.6) ** 2 <= 1}
     cliff_cells = {(1, y) for y in range(9, H)} | {(0, 9)}
     stone_cells = {(x, y) for x in (45, 46) for y in range(0, 2)}
+    stone_cells |= {(x, y) for x, y in PATIO} | {(14, 46), (15, 46)}
     near_building = {(x + dx, y + dy) for x, y in footprint | ext_faces for dx in (-1, 0, 1) for dy in (-1, 0, 1)}
     blocked_out = footprint | water_cells | cliff_cells | stone_cells | ext_faces
     patches = [(rng.uniform(2, W - 2), rng.uniform(2, H - 2), rng.uniform(1.8, 3.4)) for _ in range(26)]
@@ -964,9 +977,6 @@ def build():
         f(x + 1, y + 2, "chair_up")
         ENTRIES.append((f"mesa-{k + 1:02d}", x + 1, y + 2, f"Salão, fileira {WORK_ROWS.index(y) + 1}, "
                         f"posição {WORK_COLS.index(x) + 1}"))
-    for ty in MEETING_ROWS:
-        table("white", 48, ty, 49, ty + 1)
-        ring(48, ty, 49, ty + 1, "chair")
     f(28, 13, "cooler"); f(38, 13, "printer"); f(39, 13, "cabinet"); f(51, 13, "cabinet")
     f(57, 13, "plant_big"); f(24, 13, "plant_big"); f(45, 44, "plant"); f(57, 44, "plant_big")
     f(24, 29, "plant"); f(44, 29, "plant"); f(24, 41, "plant"); f(44, 41, "plant")
@@ -981,11 +991,24 @@ def build():
     f(44, 7, "sofa:0"); f(45, 7, "sofa:1"); f(44, 9, "armchair")
     f(56, 5, "sofa:0"); f(57, 5, "sofa:1")
 
-    # ala de reuniões
+    # pátio de convivência (área externa, conversa por proximidade)
+    for tx in (10, 19):
+        f(tx, 49, "round_table"); f(tx - 1, 49, "chair_white"); f(tx + 1, 49, "chair_white")
+        f(tx, 48, "chair_white"); f(tx, 50, "chair_white")
+    f(13, 51, "sofa:0"); f(14, 51, "sofa:1"); f(16, 51, "armchair"); f(15, 50, "coffee_table")
+    f(8, 47, "plant_big"); f(21, 47, "plant_big"); f(8, 52, "plant"); f(21, 52, "plant")
+    f(12, 47, "plant"); f(17, 47, "plant")
+
+    # salas de reunião
     for ty in WING_ROWS:
         table("white", 13, ty, 15, ty + 1)
         ring(13, ty, 15, ty + 1, "chair")
-    f(8, 19, "plant_big"); f(22, 19, "plant"); f(8, 25, "plant"); f(8, 33, "plant"); f(8, 40, "plant_big"); f(22, 40, "plant")
+    for x0, y0, x1, y1 in MEETING_ROOMS[3:]:                 # salas de baixo: mesa no centro
+        tx = (x0 + x1) // 2 - 1
+        table("white", tx, 50, tx + 2, 51)
+        ring(tx, 50, tx + 2, 51, "chair")
+    for x0, y0, x1, y1 in MEETING_ROOMS:
+        f(x0, y0 + 1, "plant_big" if x0 == 8 else "plant"); f(x1, y0 + 1, "plant"); f(x0, y1, "plant"); f(x1, y1, "plant")
 
     # escritório 1
     f(59, 12, "shelf:1"); f(60, 12, "shelf:2"); f(64, 13, "plant")
@@ -1017,14 +1040,6 @@ def build():
     f(62, 51, "sofa:0"); f(63, 51, "sofa:1"); f(64, 52, "coffee_table"); f(65, 51, "armchair")
     f(50, 47, "plant_big"); f(66, 47, "plant_big"); f(50, 54, "plant"); f(66, 54, "plant")
 
-    # sala inferior
-    for y in (47, 52):                       # baias espaçadas (5 tiles)
-        f(24, y, "booth_l"); f(25, y, "chair_white")
-        f(48, y, "booth_r"); f(47, y, "chair_white")
-    for tx, ty in ((30, 48), (36, 48), (42, 48), (30, 53), (36, 53), (42, 53)):
-        f(tx, ty, "round_table"); f(tx - 1, ty, "chair_white"); f(tx + 1, ty, "chair_white")
-    f(24, 55, "plant"); f(48, 55, "plant"); f(24, 50, "plant"); f(48, 50, "plant")
-
     # ---- rótulos
     for text, cx, row in LABELS:
         n = label_img(text).width // T
@@ -1033,8 +1048,6 @@ def build():
             put("labels", start + i, row, f"label:{text}:{i}")
 
     ENTRIES.extend([
-        ("baia-1", 25, 47, "Sala inferior, baia esquerda de cima"), ("baia-2", 25, 52, "Sala inferior, baia esquerda de baixo"),
-        ("baia-3", 47, 47, "Sala inferior, baia direita de cima"), ("baia-4", 47, 52, "Sala inferior, baia direita de baixo"),
         ("escritorio-1", 61, 13, "Escritório 1"), ("dra-julia", 69, 13, "Escritório Dra Júlia"),
         ("juridico-silvio", 62, 35, "Jurídico - Silvio"), ("diretoria", 58, 48, "Diretoria"),
     ])
