@@ -289,52 +289,102 @@ def shadow(d, box):
 
 
 def desk(variant):
-    """Estação individual de 2 tiles: monitor à esquerda (a cadeira fica embaixo), objetos à direita."""
-    im = new(64, 32); d = ImageDraw.Draw(im)
-    shadow(d, [1, 23, 62, 31])
-    rect(d, 4, 24, 6, 29, (120, 124, 136)); rect(d, 57, 24, 59, 29, (120, 124, 136))  # pernas
-    d.rounded_rectangle([1, 18, 62, 26], 2, fill=C["white_f"])
-    rect(d, 2, 25, 61, 25, shade(C["white_f"], -16))
-    d.rounded_rectangle([1, 3, 62, 22], 3, fill=C["white"])
-    vgrad(d, 3, 5, 60, 20, (248, 248, 251), (226, 228, 234))
-    rect(d, 3, 4, 60, 4, (255, 255, 255)); rect(d, 2, 22, 61, 22, C["white_e"])
-    # monitor
-    d.ellipse([10, 13, 21, 17], fill=(150, 154, 166)); rect(d, 14, 11, 17, 14, (96, 100, 112))
-    rect(d, 6, 2, 25, 12, C["dark"]); rect(d, 6, 2, 25, 2, (86, 92, 108))
-    vgrad(d, 7, 3, 24, 11, (126, 200, 246), (56, 120, 206))
-    rect(d, 7, 3, 24, 3, (40, 90, 170)); rect(d, 9, 6, 15, 6, (236, 244, 252)); rect(d, 9, 8, 19, 8, (190, 222, 248))
-    im.putpixel((22, 5), (226, 240, 252)); im.putpixel((21, 6), (226, 240, 252))
-    # teclado e mouse
-    rect(d, 8, 16, 23, 20, (86, 92, 104)); rect(d, 8, 16, 23, 16, (120, 126, 138))
-    for kx in range(9, 23, 2):
-        for ky in (17, 19):
-            im.putpixel((kx, ky), (196, 200, 210))
-    d.ellipse([26, 16, 29, 20], fill=(250, 250, 252), outline=(150, 154, 166))
-    if variant == 0:      # planta
-        rect(d, 48, 13, 56, 20, C["pot"]); rect(d, 48, 13, 49, 20, shade(C["pot"], 22)); rect(d, 55, 13, 56, 20, C["pot_d"])
-        rect(d, 47, 12, 57, 13, shade(C["pot"], -20))
-        for cx, cy, col in ((48, 8, C["leaf_d"]), (56, 8, C["leaf_d"]), (52, 5, C["leaf"]), (49, 10, C["leaf"]), (55, 10, C["leaf"])):
-            d.ellipse([cx - 3, cy - 3, cx + 3, cy + 2], fill=col)
-        rect(d, 51, 4, 52, 5, C["leaf_l"]); rect(d, 48, 8, 49, 8, C["leaf_l"])
-    elif variant == 1:    # papéis + caneca
-        rect(d, 38, 9, 47, 19, (196, 198, 206)); rect(d, 36, 7, 45, 17, (252, 252, 254))
-        for ly in (10, 12, 14):
-            rect(d, 38, ly, 43, ly, (176, 180, 192))
-        rect(d, 51, 9, 56, 16, (214, 72, 72)); rect(d, 51, 9, 52, 16, (236, 110, 110))
-        rect(d, 51, 9, 56, 9, (120, 40, 40)); rect(d, 57, 11, 58, 14, (184, 56, 56))
-    elif variant == 2:    # notebook fechado + luminária
-        rect(d, 35, 10, 49, 19, (104, 110, 124)); rect(d, 35, 10, 49, 11, (150, 156, 170))
-        rect(d, 41, 14, 43, 15, (170, 176, 190))
-        d.ellipse([52, 15, 59, 19], fill=(80, 84, 96)); rect(d, 55, 8, 56, 16, (80, 84, 96))
-        d.polygon([(51, 9), (60, 9), (58, 4), (53, 4)], fill=(250, 210, 80)); rect(d, 53, 4, 58, 4, (255, 236, 150))
-    else:                 # telefone + pastas
-        rect(d, 35, 7, 41, 18, (64, 112, 194)); rect(d, 35, 7, 36, 18, (100, 146, 220))
-        rect(d, 42, 8, 47, 18, (232, 186, 64)); rect(d, 42, 8, 43, 18, (250, 214, 110))
-        rect(d, 51, 9, 59, 18, C["dark"]); rect(d, 51, 9, 59, 9, (86, 92, 108))
-        rect(d, 52, 11, 54, 16, (70, 74, 86))
-        for kx in (56, 58):
-            for ky in (12, 14, 16):
-                im.putpixel((kx, ky), (170, 176, 190))
+    """Estação de trabalho de 3x2 tiles (96x64 px). A cadeira fica embaixo do tile do meio."""
+    im = new(96, 64); d = ImageDraw.Draw(im)
+    top, edge, front, leg = (236, 222, 198), (188, 166, 134), (198, 172, 134), (124, 92, 62)
+    shadow(d, [2, 50, 93, 63])
+    for lx in (4, 88):                                                         # pernas
+        rect(d, lx, 46, lx + 3, 59, leg); rect(d, lx, 46, lx, 59, shade(leg, 24))
+    d.rounded_rectangle([1, 38, 94, 51], 3, fill=front)
+    rect(d, 3, 50, 92, 50, shade(front, -22)); rect(d, 3, 47, 92, 47, shade(front, -10))
+    d.rounded_rectangle([1, 3, 94, 45], 4, fill=top)                          # tampo
+    vgrad(d, 3, 5, 92, 43, shade(top, 6), shade(top, -10))
+    rng = random.Random(variant)
+    for gy in range(9, 42, 7):                                                 # veios da madeira
+        gx = rng.randrange(4, 30)
+        rect(d, gx, gy, gx + rng.randrange(20, 50), gy, shade(top, -9))
+    rect(d, 3, 4, 92, 4, (252, 246, 236)); rect(d, 2, 45, 93, 45, edge)
+
+    def monitor(x0, w, y0=5, h=16):
+        cx = x0 + w // 2
+        d.ellipse([cx - 8, y0 + h + 2, cx + 8, y0 + h + 7], fill=(140, 144, 156))
+        rect(d, cx - 2, y0 + h - 1, cx + 1, y0 + h + 4, (96, 100, 112))
+        rect(d, x0, y0, x0 + w - 1, y0 + h, C["dark"]); rect(d, x0, y0, x0 + w - 1, y0, (90, 96, 112))
+        vgrad(d, x0 + 1, y0 + 1, x0 + w - 2, y0 + h - 1, (132, 204, 248), (56, 118, 204))
+        rect(d, x0 + 1, y0 + 1, x0 + w - 2, y0 + 2, (40, 86, 166))
+        rect(d, x0 + 3, y0 + 5, x0 + w // 2, y0 + 5, (236, 244, 252))
+        rect(d, x0 + 3, y0 + 8, x0 + w - 6, y0 + 8, (190, 222, 248))
+        rect(d, x0 + 3, y0 + 11, x0 + w // 2 + 2, y0 + 11, (190, 222, 248))
+        for i in range(4):
+            im.putpixel((x0 + w - 4 - i, y0 + 3 + i), (226, 240, 252))
+
+    def keyboard(x0, y0, w=28):
+        rect(d, x0, y0, x0 + w, y0 + 6, (84, 90, 104)); rect(d, x0, y0, x0 + w, y0, (124, 130, 144))
+        for kx in range(x0 + 2, x0 + w - 1, 2):
+            for ky in (y0 + 2, y0 + 4):
+                im.putpixel((kx, ky), (198, 202, 212))
+        rect(d, x0 + 8, y0 + 5, x0 + w - 8, y0 + 5, (198, 202, 212))
+
+    def mouse(x0, y0):
+        d.rounded_rectangle([x0, y0, x0 + 13, y0 + 10], 2, fill=(54, 70, 110))
+        d.ellipse([x0 + 5, y0 + 2, x0 + 9, y0 + 8], fill=(250, 250, 252), outline=(150, 154, 166))
+
+    def plant_pot(cx, cy):
+        rect(d, cx - 4, cy, cx + 4, cy + 8, C["pot"]); rect(d, cx - 4, cy, cx - 3, cy + 8, shade(C["pot"], 24))
+        rect(d, cx + 3, cy, cx + 4, cy + 8, C["pot_d"]); rect(d, cx - 5, cy - 1, cx + 5, cy, shade(C["pot"], -18))
+        for ox, oy, col in ((-4, -4, C["leaf_d"]), (4, -4, C["leaf_d"]), (0, -8, C["leaf"]), (-3, -7, C["leaf"]), (3, -6, C["leaf"])):
+            d.ellipse([cx + ox - 3, cy + oy - 3, cx + ox + 3, cy + oy + 2], fill=col)
+        rect(d, cx - 1, cy - 10, cx, cy - 9, C["leaf_l"]); rect(d, cx - 4, cy - 6, cx - 3, cy - 6, C["leaf_l"])
+
+    def mug(x0, y0, col=(214, 72, 72)):
+        rect(d, x0, y0, x0 + 6, y0 + 7, col); rect(d, x0, y0, x0 + 1, y0 + 7, shade(col, 30))
+        rect(d, x0 + 1, y0, x0 + 5, y0 + 1, (90, 54, 40)); rect(d, x0 + 7, y0 + 2, x0 + 8, y0 + 5, shade(col, -26))
+
+    def papers(x0, y0):
+        rect(d, x0 + 2, y0 + 2, x0 + 15, y0 + 14, (200, 202, 210)); rect(d, x0, y0, x0 + 13, y0 + 12, (252, 252, 254))
+        for ly in range(y0 + 3, y0 + 11, 2):
+            rect(d, x0 + 2, ly, x0 + 10, ly, (176, 180, 192))
+
+    def binders(x0, y0):
+        for i, col in enumerate(((64, 112, 194), (232, 186, 64), (90, 160, 100), (200, 70, 70))):
+            bx = x0 + i * 5
+            rect(d, bx, y0, bx + 4, y0 + 16, col); rect(d, bx, y0, bx, y0 + 16, shade(col, 34))
+            rect(d, bx + 1, y0 + 5, bx + 3, y0 + 8, (246, 246, 250))
+
+    def lamp(x0, y0):
+        d.ellipse([x0, y0 + 14, x0 + 9, y0 + 18], fill=(70, 74, 86))
+        d.line([(x0 + 4, y0 + 15), (x0 + 8, y0 + 7), (x0 + 4, y0 + 3)], fill=(70, 74, 86), width=2)
+        d.polygon([(x0 - 2, y0 + 6), (x0 + 9, y0 + 6), (x0 + 7, y0), (x0, y0)], fill=(250, 210, 80))
+        rect(d, x0, y0, x0 + 7, y0, (255, 236, 150))
+
+    def phone(x0, y0):
+        rect(d, x0, y0, x0 + 11, y0 + 9, C["dark"]); rect(d, x0, y0, x0 + 11, y0, (90, 96, 112))
+        rect(d, x0 + 1, y0 + 2, x0 + 4, y0 + 8, (70, 74, 86))
+        for kx in (x0 + 6, x0 + 8, x0 + 10):
+            for ky in (y0 + 3, y0 + 5, y0 + 7):
+                im.putpixel((kx, ky), (176, 182, 196))
+
+    def laptop(x0, y0):
+        rect(d, x0, y0 + 11, x0 + 21, y0 + 17, (176, 180, 192)); rect(d, x0 + 2, y0 + 12, x0 + 19, y0 + 15, (120, 126, 138))
+        rect(d, x0 + 1, y0, x0 + 20, y0 + 11, (70, 74, 86)); vgrad(d, x0 + 2, y0 + 1, x0 + 19, y0 + 9, (150, 210, 246), (70, 130, 210))
+
+    def sticky(x0, y0):
+        for i, col in enumerate(((252, 226, 110), (250, 170, 190), (160, 220, 170))):
+            rect(d, x0 + i * 7, y0 + (i % 2), x0 + i * 7 + 5, y0 + 5 + (i % 2), col)
+
+    if variant == 2:                                  # dois monitores
+        monitor(16, 30); monitor(50, 30)
+    else:
+        monitor(33, 30)
+    keyboard(33, 30); mouse(68, 29)
+    if variant == 0:
+        binders(6, 6); papers(8, 26); plant_pot(84, 16); mug(80, 31)
+    elif variant == 1:
+        lamp(8, 6); papers(6, 26); phone(78, 8); mug(84, 28, (64, 112, 194))
+    elif variant == 2:
+        papers(6, 27); mug(84, 30); sticky(80, 12)
+    else:
+        laptop(5, 6); plant_pot(86, 16); sticky(6, 30); mug(82, 32, (90, 160, 100))
     return outline(im)
 
 
@@ -656,8 +706,8 @@ def make_tile(name):
     if kind == "ext":
         return ext_face(arg == "win")
     if kind == "desk":
-        v, _, i = arg.partition(":")
-        return crop(big(f"desk-{v}", lambda: desk(int(v))), int(i), 0)
+        v, i, j = arg.split(":")
+        return crop(big(f"desk-{v}", lambda: desk(int(v))), int(i), int(j))
     if kind == "shelf":
         return bookshelf(int(arg))
     if kind == "counter":
@@ -741,7 +791,7 @@ FACE_DECOR = {
     **{(x, 46): "blue" for x in (26, 29, 41, 44, 47)},
 }
 
-WORK_COLS = (26, 31, 36, 41)          # x da mesa (2 tiles); a cadeira fica em (x, y + 1)
+WORK_COLS = (26, 31, 36, 41)          # x da mesa (3x2 tiles); a cadeira fica em (x + 1, y + 2)
 WORK_ROWS = (15, 20, 25, 32, 37)      # 3 fileiras no Cível, 2 no Setor Pernambuco
 MEETING_ROWS = (15, 23, 31, 39)       # mesas de reunião do salão (2x2, coluna x 48-49)
 WING_ROWS = (21, 29, 37)              # mesas da ala de reuniões (3x2, x 13-15)
@@ -901,9 +951,12 @@ def build():
     ENTRIES.clear()
     for k, (x, y) in enumerate((x, y) for y in WORK_ROWS for x in WORK_COLS):
         v = (k * 3 + y) % 4
-        f(x, y, f"desk:{v}:0"); f(x + 1, y, f"desk:{v}:1"); f(x, y + 1, "chair_up")
+        for i in range(3):
+            for j in range(2):
+                f(x + i, y + j, f"desk:{v}:{i}:{j}")
+        f(x + 1, y + 2, "chair_up")
         setor = "Cível" if y < 30 else "Setor Pernambuco"
-        ENTRIES.append((f"mesa-{k + 1:02d}", x, y + 1, f"{setor}, fileira {WORK_ROWS.index(y) + 1}, "
+        ENTRIES.append((f"mesa-{k + 1:02d}", x + 1, y + 2, f"{setor}, fileira {WORK_ROWS.index(y) + 1}, "
                         f"posição {WORK_COLS.index(x) + 1}"))
     for ty in MEETING_ROWS:
         table("white", 48, ty, 49, ty + 1)
