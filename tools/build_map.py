@@ -9,7 +9,7 @@ import math
 import random
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 ROOT = Path(__file__).resolve().parent.parent
 T = 32            # tamanho do tile (WorkAdventure usa 32x32)
@@ -747,6 +747,13 @@ class Atlas:
                 self.collides.append(len(self.images) - 1)
         return self.gids[name]
 
+    def add_image(self, key, img):
+        """Tile pronto (sem colisão), usado para as sombras."""
+        if key not in self.gids:
+            self.images.append(img)
+            self.gids[key] = len(self.images)
+        return self.gids[key]
+
     def image(self):
         rows = math.ceil(len(self.images) / ATLAS_COLS)
         im = new(ATLAS_COLS * T, rows * T)
@@ -1041,12 +1048,46 @@ def build():
 
 # ------------------------------------------------------------------------ saída
 
-LAYER_ORDER = ["floor", "walls", "furniture", "labels", "floorLayer", "above", "start"]
+LAYER_ORDER = ["floor", "sombras", "walls", "furniture", "labels", "floorLayer", "above", "start"]
+
+SHADOW_COLOR = (18, 14, 32)
+SHADOW_OFFSET = (5, 7)        # luz vindo de cima à esquerda: a sombra cai para baixo e para a direita
+
+
+def build_shadows(data, atlas):
+    """Camada de sombras suaves: sombra projetada de paredes, móveis e árvores, mais um
+    escurecimento junto às paredes (oclusão). Fica entre o piso e os objetos, então só aparece no chão."""
+    size = (W * T, H * T)
+
+    def solid(names):
+        im = Image.new("RGBA", size, (0, 0, 0, 0))
+        for name in names:
+            for k, gid in enumerate(data[name]):
+                if gid:
+                    im.alpha_composite(atlas.images[gid - 1], ((k % W) * T, (k // W) * T))
+        return im.getchannel("A").point(lambda a: 255 if a > 200 else 0)
+
+    objects = solid(["walls", "furniture", "above"])
+    cast = Image.new("L", size, 0); cast.paste(objects, SHADOW_OFFSET)
+    cast = cast.filter(ImageFilter.GaussianBlur(3)).point(lambda a: int(a * 0.42))
+    ao = solid(["walls"]).filter(ImageFilter.GaussianBlur(8)).point(lambda a: int(a * 0.38))
+    alpha = ImageChops.lighter(cast, ao)
+    shadow = Image.new("RGBA", size, SHADOW_COLOR + (0,)); shadow.putalpha(alpha)
+
+    layer = [0] * (W * H)
+    for k in range(W * H):
+        x, y = (k % W) * T, (k // W) * T
+        tile = shadow.crop((x, y, x + T, y + T))
+        if tile.getchannel("A").getextrema()[1] < 6:
+            continue
+        layer[k] = atlas.add_image(("sombra", tile.tobytes()), tile)
+    return layer
 
 
 def write_outputs(layers):
     atlas = Atlas()
     data = {k: [atlas.gid(n) if n else 0 for row in rows for n in row] for k, rows in layers.items()}
+    data["sombras"] = build_shadows(data, atlas)
 
     tileset_png = ROOT / "tilesets" / "escritorio.png"
     tileset_png.parent.mkdir(exist_ok=True)
@@ -1102,7 +1143,7 @@ def write_outputs(layers):
 
     # ---- prévias
     preview = Image.new("RGBA", (W * T, H * T), (0, 0, 0, 255))
-    for name in ("floor", "walls", "furniture", "labels", "above"):
+    for name in ("floor", "sombras", "walls", "furniture", "labels", "above"):
         for k, gid in enumerate(data[name]):
             if gid:
                 tile = atlas.images[gid - 1]
