@@ -27,11 +27,11 @@ por exemplo `.../escritorio.tmj#mesa-07`.
 | `mesa-18` | Salão, fileira 5, posição 2 | |
 | `mesa-19` | Salão, fileira 5, posição 3 | |
 | `mesa-20` | Salão, fileira 5, posição 4 | |
-| `baia-1` | Sala inferior, baia esquerda de cima | |
-| `baia-2` | Sala inferior, baia esquerda de baixo | |
-| `baia-3` | Sala inferior, baia direita de cima | |
-| `baia-4` | Sala inferior, baia direita de baixo | |
 | `escritorio-1` | Escritório 1 | |
 | `dra-julia` | Escritório Dra Júlia | |
 | `juridico-silvio` | Jurídico - Silvio | |
 | `diretoria` | Diretoria | |
+| `baia-1` | Sala inferior, baia esquerda de cima | |
+| `baia-2` | Sala inferior, baia esquerda de baixo | |
+| `baia-3` | Sala inferior, baia direita de cima | |
+| `baia-4` | Sala inferior, baia direita de baixo | |

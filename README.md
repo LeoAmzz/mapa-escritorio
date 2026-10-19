@@ -1,32 +1,36 @@
 # Mapa WorkAdventure — Escritório
 
-Mapa gerado por código (pixel art 32×32), no layout da referência.
+Mapa do escritório virtual, montado com os tilesets oficiais do WorkAdventure.
 
 | Arquivo | O que é |
 |---|---|
 | `escritorio.tmj` | Mapa (abre no Tiled e roda no WorkAdventure) |
-| `tilesets/escritorio.png` | Tileset gerado (piso, paredes, móveis, rótulos) |
-| `preview.png` | Prévia do mapa (tamanho real) |
-| `preview_2x.png` | Prévia ampliada 2×, como aparece com zoom no jogo |
-| `comparacao.png` | Trecho do salão antes/depois do detalhamento dos tiles |
-| `preview_areas.png` | Prévia com as áreas de Jitsi (laranja), área silenciosa (azul) e o spawn (verde) |
-| `assets/maju_logo.png` | Logo usado no tapete do salão e na placa da diretoria |
+| `tilesets/wa/` | Tilesets oficiais do WorkAdventure + `LICENSE.assets` |
+| `tilesets/amz.png` | Tiles próprios: logo da MAJU e rótulos das salas |
+| `assets/maju_logo.png` | Logo usado na recepção e na diretoria |
+| `preview.png` / `preview_2x.png` | Prévia do mapa (tamanho real / ampliada 2×) |
+| `preview_areas.png` | Áreas de Jitsi (laranja), área silenciosa (azul), recepção (verde) e pontos de entrada (rosa) |
+| `PONTOS_DE_ENTRADA.md` | Lista dos pontos de entrada por mesa |
 | `tools/build_map.py` | Gera tudo acima: `python tools/build_map.py` |
 
 ## Camadas
 
-- `floor`, `walls`, `furniture`, `labels`: abaixo do personagem
-- `floorLayer`: camada de objetos com as áreas (`class: area`, propriedade `jitsiRoom`)
-- `above`: copa das árvores (acima do personagem)
-- `start`: entrada padrão, na recepção (convidados)
-- `mesa-01` … `mesa-20`, `baia-1` … `baia-4`, `escritorio-1`, `dra-julia`, `juridico-silvio`, `diretoria`:
-  pontos de entrada (`startLayer = true`). Lista em `PONTOS_DE_ENTRADA.md`; use `#nome` no link do mapa.
+- `start`, `mesa-01` … `diretoria`, `collisions`: ficam por baixo do piso (como no mapa oficial do WorkAdventure).
+  `start` é a recepção (convidados); as demais têm `startLayer = true` e são usadas com `#nome` no link.
+- `floor`, `floor2`, `walls`, `deco1`, `deco2`, `furniture1-3`, `labels`: abaixo do personagem
+- `floorLayer`: áreas (`jitsiRoom`, `silent`)
+- `above1`, `above2`: tampo das mesas, copa das árvores e plantas (acima do personagem)
 
-As colisões ficam na propriedade `collides` dos tiles (paredes, mesas, plantas, água...). Cadeiras e sofás não colidem.
+As colisões ficam na camada `collisions` (tile BLOCK do `WA_Special_Zones`, com `collides = true`).
 
-## Publicar no servidor
+## Licença dos tilesets
 
-Copie `escritorio.tmj` e a pasta `tilesets/` juntos para onde o WorkAdventure serve os mapas, mantendo o caminho relativo
-`tilesets/escritorio.png`.
+Os arquivos em `tilesets/wa/` são do WorkAdventure e seguem a *WorkAdventure specific resources license*
+(`tilesets/wa/LICENSE.assets`): uso e modificação permitidos apenas em mapas para WorkAdventure.
+
+## Publicação
+
+O mapa é servido pelo GitHub Pages:
+`https://office.amzlab.site/_/global/leoamzz.github.io/mapa-escritorio/escritorio.tmj`
 
 > Se editar o mapa à mão no Tiled, rodar o script de novo sobrescreve `escritorio.tmj`.

@@ -1,607 +1,82 @@
 #!/usr/bin/env python3
-"""Gera o tileset em pixel art, o mapa .tmj (Tiled / WorkAdventure) e as prévias.
+"""Gera o mapa do escritório (Tiled / WorkAdventure) com os tilesets oficiais do WorkAdventure.
 
 Uso:  python tools/build_map.py
-Saída: tilesets/escritorio.png, escritorio.tmj, preview.png, preview_areas.png
+Saída: escritorio.tmj, tilesets/amz.png (logo e rótulos), preview*.png, PONTOS_DE_ENTRADA.md
+
+Os tilesets oficiais ficam em tilesets/wa/ (licença em tilesets/wa/LICENSE.assets).
 """
 import json
 import math
 import random
-from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-ROOT = Path(__file__).resolve().parent.parent
-T = 32            # tamanho do tile (WorkAdventure usa 32x32)
-W, H = 84, 64     # tamanho do mapa em tiles
-ATLAS_COLS = 16
+from wa_tiles import ROOT, T, WA_TILESETS, parse, tile_image, ts_columns, ts_count, ts_image
 
-C = dict(
-    grass=(92, 158, 64), grass_l=(116, 178, 78), grass_d=(76, 138, 56),
-    dgrass=(68, 128, 52), dgrass_d=(58, 112, 46), dgrass_l=(80, 142, 60),
-    water=(72, 130, 212), water_l=(108, 162, 232), water_d=(60, 112, 190), foam=(186, 218, 246),
-    cliff=(124, 88, 58), cliff_l=(156, 116, 76), cliff_d=(90, 62, 42),
-    stone=(62, 66, 78), stone_l=(78, 82, 96), stone_d=(48, 51, 61),
-    wl=(178, 122, 78), wl_d=(148, 98, 60), wl_l=(192, 138, 92),
-    wd=(124, 82, 58), wd_d=(100, 65, 46), wd_l=(138, 94, 66),
-    tg=(170, 176, 184), tg_d=(144, 150, 160), tg_l=(188, 194, 200),
-    sl=(80, 84, 94), sl_d=(64, 68, 78), sl_l=(92, 96, 106),
-    navy=(30, 34, 52), navy_l=(46, 52, 76),
-    face=(206, 210, 218), face_l=(232, 234, 240), face_d=(156, 162, 174), face_s=(118, 124, 136),
-    brick=(124, 130, 142), brick_d=(104, 110, 122), brick_l=(142, 148, 160),
-    white=(238, 239, 243), white_e=(192, 195, 204), white_f=(168, 172, 184),
-    dark=(42, 46, 56), screen=(84, 164, 226), screen_l=(156, 210, 248),
-    chair=(66, 70, 82), chair_d=(48, 52, 62),
-    yellow=(238, 190, 60), yellow_d=(196, 146, 36),
-    cw=(228, 228, 234), cw_d=(184, 184, 196),
-    pot=(186, 106, 64), pot_d=(146, 80, 48), leaf=(64, 150, 72), leaf_l=(104, 188, 90), leaf_d=(42, 110, 54),
-    wood=(134, 88, 54), wood_d=(100, 64, 40), wood_l=(162, 112, 72),
-    trunk=(104, 72, 46), canopy=(52, 122, 58), canopy_l=(84, 158, 72), canopy_d=(36, 94, 46),
-    shadow=(0, 0, 0, 55),
+W, H = 84, 64
+FLIP = 0x80000000
+
+# ------------------------------------------------------------------------ layout
+#
+# Espaçado pensando na conversa por proximidade do WorkAdventure: estações de trabalho
+# a 5 tiles (160 px) uma da outra e grupos de mesas separados por corredores largos.
+# As paredes do WorkAdventure têm face de 2 tiles: as duas primeiras linhas de cada sala são parede.
+
+FLOORS = {"hall": "R350", "wood": "R353", "dark": "R352", "carpet": "R360", "tile": "R358",
+          "stripes": "R383", "exec": "R377"}
+
+# Salas (interior): x0, y0, x1, y1, piso. As paredes nascem em volta de cada sala.
+ROOMS = [
+    (24, 3, 42, 10, "carpet"),      # auditório
+    (44, 3, 57, 10, "tile"),        # recepção (entrada)
+    (24, 12, 57, 44, "hall"),       # salão principal
+    (8, 18, 22, 40, "wood"),        # ala de reuniões
+    (8, 41, 22, 44, "hall"),        # faixa de passagem
+    (59, 12, 64, 17, "dark"),       # escritório 1
+    (66, 12, 72, 17, "dark"),       # escritório Dra Júlia
+    (59, 19, 72, 20, "hall"),       # corredor
+    (59, 22, 72, 31, "stripes"),    # lunchroom
+    (59, 33, 66, 44, "hall"),       # jurídico - Silvio
+    (50, 46, 66, 54, "exec"),       # diretoria
+    (24, 46, 48, 55, "hall"),       # sala inferior
+]
+CORRIDOR = {(x, y) for x in range(59, 73) for y in (19, 20)}     # corredor aberto: sem face de parede
+DOORS = ([(x, 11) for x in (32, 33, 34)] + [(x, 11) for x in (53, 54, 55)] + [(45, 2), (46, 2)]
+         + [(23, y) for y in range(26, 45)]
+         + [(61, 18), (69, 18), (58, 19), (58, 20), (58, 27), (58, 28), (58, 37), (58, 38)]
+         + [(x, 45) for x in range(33, 39)] + [(55, 45), (56, 45)])
+
+WORK_COLS = (26, 31, 36, 41)          # x da mesa (3x2 tiles); a cadeira fica em (x + 1, y + 2)
+WORK_ROWS = (15, 20, 25, 32, 37)      # 5 fileiras de 4 mesas no salão
+MEETING_ROWS = (15, 23, 31, 39)       # mesas de vidro do salão (2x4, x 48-49)
+WING_ROWS = (21, 29, 37)              # mesas da ala de reuniões (3x3, x 13-15)
+
+LABELS = [("Dra Júlia", 69.5, 20), ("LUNCHROOM", 65.5, 31), ("JURÍDICO - SILVIO", 62.5, 44)]
+
+AREAS = (
+    [("Auditório", 24, 3, 42, 10, {"jitsiRoom": "auditorio"})]
+    + [(f"Reunião {i}", 11, r - 1, 17, r + 3, {"jitsiRoom": f"reuniao-{i}"}) for i, r in enumerate(WING_ROWS, 1)]
+    + [(f"Reunião salão {i}", 47, r - 1, 50, r + 4, {"jitsiRoom": f"reuniao-salao-{i}"})
+       for i, r in enumerate(MEETING_ROWS, 1)]
+    + [("Lunchroom", 59, 22, 72, 31, {"silent": True})]
 )
 
+SPAWN = [(x, y) for x in (55, 56) for y in (8, 9)]   # recepção: entrada padrão (convidados)
 
-# --------------------------------------------------------------------------- desenho
+LAYERS = ["start", "collisions", "floor", "floor2", "walls", "deco1", "deco2",
+          "furniture1", "furniture2", "furniture3", "labels", "floorLayer", "above1", "above2"]
+HIDDEN = ("start", "collisions")      # ficam por baixo do piso, como no mapa oficial
+
+
+# ------------------------------------------------------------------- tileset próprio (logo/rótulos)
+
+LOGO_PATH = ROOT / "assets" / "maju_logo.png"
+_custom = {}        # referência -> imagem 32x32
+
 
 def new(w=T, h=T):
     return Image.new("RGBA", (w, h), (0, 0, 0, 0))
-
-
-def rect(d, x0, y0, x1, y1, c):
-    d.rectangle([x0, y0, x1, y1], fill=c)
-
-
-def lighten(c, k=24):
-    return tuple(min(255, v + k) for v in c[:3])
-
-
-def noise(im, colors, n, seed):
-    rng = random.Random(seed)
-    px = im.load()
-    for _ in range(n):
-        px[rng.randrange(im.width), rng.randrange(im.height)] = rng.choice(colors)
-
-
-def grass(seed):
-    im = new(); d = ImageDraw.Draw(im)
-    rect(d, 0, 0, 31, 31, C["grass"])
-    noise(im, [C["grass_l"], C["grass_d"]], 70, seed)
-    rng = random.Random(seed + 99)
-    for _ in range(6):  # tufos
-        x, y = rng.randrange(2, 30), rng.randrange(3, 30)
-        rect(d, x, y - 2, x, y, C["grass_d"]); rect(d, x + 1, y - 3, x + 1, y - 1, C["grass_l"])
-    return im
-
-
-def grass_flowers(seed):
-    im = grass(seed); d = ImageDraw.Draw(im)
-    rng = random.Random(seed)
-    for _ in range(4):
-        x, y = rng.randrange(3, 28), rng.randrange(3, 28)
-        col = rng.choice([(240, 240, 250), (250, 214, 80), (236, 110, 140)])
-        rect(d, x, y, x + 1, y + 1, col)
-    return im
-
-
-def edged(base_fn, mask, edge_fn, land=None, rim=None, r=12):
-    """Aplica borda nos lados indicados pela máscara (N=1, L=2, S=4, O=8).
-    Onde dois lados vizinhos têm borda, arredonda o canto pintando `land` por fora do raio."""
-    im = base_fn(); px = im.load()
-    corners = [(1 | 8, 0, 0), (1 | 2, 31, 0), (4 | 2, 31, 31), (4 | 8, 0, 31)]
-    for y in range(T):
-        for x in range(T):
-            dists = []
-            if mask & 1: dists.append(y)
-            if mask & 2: dists.append(31 - x)
-            if mask & 4: dists.append(31 - y)
-            if mask & 8: dists.append(x)
-            if dists:
-                c = edge_fn(min(dists), x, y)
-                if c: px[x, y] = c
-            if land:
-                for bits, cx, cy in corners:
-                    if mask & bits == bits and abs(x - cx) < r and abs(y - cy) < r:
-                        ox, oy = cx + (r if cx == 0 else -r), cy + (r if cy == 0 else -r)
-                        dist = math.hypot(x - ox, y - oy)
-                        if dist > r:
-                            px[x, y] = land[(x * 7 + y * 3) % len(land)]
-                        elif rim and dist > r - 2:
-                            px[x, y] = rim
-    return im
-
-
-def dark_grass(mask):
-    def base():
-        im = new(); d = ImageDraw.Draw(im)
-        rect(d, 0, 0, 31, 31, C["dgrass"])
-        noise(im, [C["dgrass_l"], C["dgrass_d"]], 60, 7 + mask)
-        return im
-
-    def edge(dist, x, y):
-        if dist == 0 or (dist < 3 and (x + y) % 2 == 0) or (dist < 6 and (x * 3 + y) % 7 == 0):
-            return C["grass"]
-        return None
-    return edged(base, mask, edge, land=[C["grass"]] * 6 + [C["grass_l"], C["grass_d"]])
-
-
-def water(mask):
-    def base():
-        im = new(); d = ImageDraw.Draw(im)
-        rect(d, 0, 0, 31, 31, C["water"])
-        rng = random.Random(3 + mask)
-        for _ in range(5):
-            x, y = rng.randrange(0, 26), rng.randrange(2, 30)
-            rect(d, x, y, x + rng.randrange(3, 6), y, C["water_l"])
-        noise(im, [C["water_d"]], 25, mask)
-        return im
-
-    def edge(dist, x, y):
-        return C["foam"] if dist < 2 else (C["water_l"] if dist < 3 else None)
-    return edged(base, mask, edge, land=[C["grass"]] * 6 + [C["grass_l"], C["grass_d"]], rim=C["foam"])
-
-
-def cliff():
-    im = new(); d = ImageDraw.Draw(im)
-    rect(d, 0, 0, 31, 31, C["cliff"])
-    rng = random.Random(11)
-    for _ in range(9):
-        x, y = rng.randrange(0, 26), rng.randrange(0, 26)
-        w, h = rng.randrange(4, 8), rng.randrange(3, 6)
-        rect(d, x, y + h, x + w, y + h + 1, C["cliff_d"])
-        rect(d, x, y, x + w, y + h - 1, C["cliff_l"])
-    rect(d, 0, 0, 1, 31, C["cliff_d"])
-    return im
-
-
-def shade(c, k):
-    return tuple(max(0, min(255, v + int(k))) for v in c[:3])
-
-
-def vgrad(d, x0, y0, x1, y1, top, bottom):
-    """Gradiente vertical em faixas de 1 px."""
-    n = max(1, y1 - y0)
-    for y in range(y0, y1 + 1):
-        t = (y - y0) / n
-        rect(d, x0, y, x1, y, tuple(round(a + (b - a) * t) for a, b in zip(top[:3], bottom[:3])))
-
-
-OUTLINE = (34, 30, 42, 255)
-
-
-def outline(im, color=OUTLINE):
-    """Contorno de 1 px em volta das partes opacas (ignora a sombra semitransparente)."""
-    src = im.load(); out = im.copy(); px = out.load()
-    for y in range(im.height):
-        for x in range(im.width):
-            if src[x, y][3] == 255:
-                continue
-            for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
-                if 0 <= nx < im.width and 0 <= ny < im.height and src[nx, ny][3] == 255:
-                    px[x, y] = color
-                    break
-    return out
-
-
-def pavers(base, dk, lt, size=16):
-    im = new(); d = ImageDraw.Draw(im)
-    rect(d, 0, 0, 31, 31, base)
-    noise(im, [shade(base, 7), shade(base, -6)], 60, sum(base))
-    for k in range(0, 32, size):
-        rect(d, 0, k + size - 1, 31, k + size - 1, dk); rect(d, k + size - 1, 0, k + size - 1, 31, dk)
-        rect(d, 0, k, 31, k, lt); rect(d, k, 0, k, 31, lt)
-        rect(d, 0, k + size - 2, 31, k + size - 2, shade(base, -4))
-    return im
-
-
-def planks(base, dk, lt, seed):
-    """Tábuas horizontais de 8 px. As pontas de cada fileira têm o tom base (emendam com o tile
-    vizinho) e o trecho do meio varia de tom, o que quebra a repetição."""
-    im = new(); d = ImageDraw.Draw(im)
-    rng = random.Random(seed * 31 + 7)
-    for row in range(4):
-        y0 = row * 8
-        j1 = (row * 11 + 3 + seed * 5) % 14 + 2
-        j2 = j1 + 10 + (row + seed) % 6
-        for a, b, k in ((0, j1 - 1, 0), (j1, j2 - 1, rng.randrange(-12, 12)), (j2, 31, 0)):
-            if a > b:
-                continue
-            rect(d, a, y0, b, y0 + 6, shade(base, k))
-            rect(d, a, y0, b, y0, shade(base, k + 12))
-            rect(d, a, y0 + 6, b, y0 + 6, shade(base, k - 6))
-            for _ in range(2):
-                gx = rng.randrange(a, max(a + 1, b - 3)); gy = y0 + rng.randrange(2, 5)
-                rect(d, gx, gy, min(b, gx + rng.randrange(3, 8)), gy, shade(base, k - 10))
-        rect(d, 0, y0 + 7, 31, y0 + 7, dk)
-        for j in (j1, j2):
-            rect(d, j, y0, j, y0 + 6, dk)
-            if j + 1 <= 31:
-                rect(d, j + 1, y0 + 1, j + 1, y0 + 5, shade(base, 16))
-    return im
-
-
-def wall_top():
-    im = new(); d = ImageDraw.Draw(im)
-    rect(d, 0, 0, 31, 31, C["navy"])
-    for y in range(0, 32, 4):
-        for x in range((y // 4) % 2 * 2, 32, 4):
-            im.putpixel((x, y), C["navy_l"])
-    return im
-
-
-def face(kind):
-    im = new(); d = ImageDraw.Draw(im)
-    vgrad(d, 0, 3, 31, 24, shade(C["face"], 12), shade(C["face"], -10))
-    rect(d, 0, 0, 31, 0, (250, 250, 252)); rect(d, 0, 1, 31, 2, C["face_l"])
-    rect(d, 0, 3, 31, 3, shade(C["face"], -22))
-    rect(d, 31, 4, 31, 24, shade(C["face"], -14))                      # junta do painel
-    rect(d, 0, 25, 31, 29, C["wood"]); rect(d, 0, 25, 31, 25, C["wood_l"])  # rodapé
-    rect(d, 0, 29, 31, 29, C["wood_d"]); rect(d, 0, 30, 31, 31, (58, 48, 46))
-    if kind == "green":      # quadro verde
-        rect(d, 4, 5, 27, 22, (50, 56, 68)); rect(d, 4, 5, 27, 5, (90, 98, 112))
-        vgrad(d, 6, 7, 25, 20, (92, 160, 108), (60, 122, 80))
-        for i in range(4):
-            im.putpixel((9 + i, 15 - i), (140, 200, 150))
-        rect(d, 5, 22, 26, 23, (170, 176, 188))
-    elif kind == "blue":     # janela
-        rect(d, 3, 4, 28, 22, (150, 156, 168)); rect(d, 4, 5, 27, 21, (244, 246, 250))
-        vgrad(d, 6, 7, 25, 19, (176, 214, 248), (96, 150, 222))
-        rect(d, 15, 7, 16, 19, (244, 246, 250)); rect(d, 6, 13, 25, 13, (244, 246, 250))
-        for i in range(5):
-            im.putpixel((8 + i, 12 - i), (226, 240, 252)); im.putpixel((19 + i, 18 - i), (176, 210, 246))
-        rect(d, 2, 22, 29, 23, (236, 238, 244)); rect(d, 2, 24, 29, 24, shade(C["face"], -30))
-    elif kind == "board":    # quadro branco
-        vgrad(d, 2, 4, 29, 22, (190, 196, 206), (130, 136, 148))
-        rect(d, 3, 5, 28, 20, (250, 250, 253)); rect(d, 3, 5, 28, 5, (230, 232, 238))
-        rect(d, 6, 8, 17, 8, (60, 110, 200)); rect(d, 6, 11, 22, 11, (210, 70, 70))
-        rect(d, 6, 14, 14, 14, (60, 150, 90)); rect(d, 19, 14, 25, 18, (250, 220, 120))
-        rect(d, 8, 21, 23, 22, (120, 126, 138)); rect(d, 10, 21, 12, 21, (210, 70, 70))
-    elif kind == "tv":
-        rect(d, 3, 4, 28, 21, C["dark"]); rect(d, 3, 4, 28, 4, (80, 86, 100))
-        vgrad(d, 5, 6, 26, 19, (104, 186, 240), (52, 112, 200))
-        rect(d, 7, 8, 16, 9, (230, 240, 252)); rect(d, 7, 12, 22, 12, (180, 214, 244)); rect(d, 7, 15, 19, 15, (180, 214, 244))
-        rect(d, 13, 22, 18, 23, (70, 74, 86)); im.putpixel((26, 20), (90, 220, 120))
-    elif kind == "art":
-        rect(d, 7, 3, 24, 22, C["wood_d"]); rect(d, 8, 4, 23, 21, C["wood_l"])
-        vgrad(d, 10, 6, 21, 14, (160, 206, 244), (210, 230, 250))
-        rect(d, 10, 15, 21, 19, (90, 160, 80)); d.polygon([(10, 15), (14, 10), (18, 15)], fill=(70, 130, 70))
-        rect(d, 17, 7, 19, 9, (250, 220, 90))
-    return im
-
-
-def ext_face(window):
-    im = new(); d = ImageDraw.Draw(im)
-    rect(d, 0, 0, 31, 31, C["brick"])
-    for i, y in enumerate(range(5, 30, 6)):
-        rect(d, 0, y, 31, y, C["brick_d"])
-        for x in range(4 + (i % 2) * 6, 32, 12):
-            rect(d, x, y - 5, x, y - 1, C["brick_d"])
-    rect(d, 0, 0, 31, 1, C["brick_l"]); rect(d, 0, 29, 31, 31, (84, 90, 100))
-    if window:
-        rect(d, 9, 6, 22, 22, (236, 238, 244)); rect(d, 11, 8, 20, 20, (88, 140, 220))
-        rect(d, 15, 8, 16, 20, (236, 238, 244)); rect(d, 12, 9, 13, 12, (150, 192, 240))
-    return im
-
-
-# ------------------------------------------------------------------- mobiliário
-
-def shadow(d, box):
-    d.ellipse(box, fill=C["shadow"])
-
-
-def desk(variant):
-    """Estação de trabalho de 3x2 tiles (96x64 px). A cadeira fica embaixo do tile do meio."""
-    im = new(96, 64); d = ImageDraw.Draw(im)
-    top, edge, front, leg = (236, 222, 198), (188, 166, 134), (198, 172, 134), (124, 92, 62)
-    shadow(d, [2, 50, 93, 63])
-    for lx in (4, 88):                                                         # pernas
-        rect(d, lx, 46, lx + 3, 59, leg); rect(d, lx, 46, lx, 59, shade(leg, 24))
-    d.rounded_rectangle([1, 38, 94, 51], 3, fill=front)
-    rect(d, 3, 50, 92, 50, shade(front, -22)); rect(d, 3, 47, 92, 47, shade(front, -10))
-    d.rounded_rectangle([1, 3, 94, 45], 4, fill=top)                          # tampo
-    vgrad(d, 3, 5, 92, 43, shade(top, 6), shade(top, -10))
-    rng = random.Random(variant)
-    for gy in range(9, 42, 7):                                                 # veios da madeira
-        gx = rng.randrange(4, 30)
-        rect(d, gx, gy, gx + rng.randrange(20, 50), gy, shade(top, -9))
-    rect(d, 3, 4, 92, 4, (252, 246, 236)); rect(d, 2, 45, 93, 45, edge)
-
-    def monitor(x0, w, y0=5, h=16):
-        cx = x0 + w // 2
-        d.ellipse([cx - 8, y0 + h + 2, cx + 8, y0 + h + 7], fill=(140, 144, 156))
-        rect(d, cx - 2, y0 + h - 1, cx + 1, y0 + h + 4, (96, 100, 112))
-        rect(d, x0, y0, x0 + w - 1, y0 + h, C["dark"]); rect(d, x0, y0, x0 + w - 1, y0, (90, 96, 112))
-        vgrad(d, x0 + 1, y0 + 1, x0 + w - 2, y0 + h - 1, (132, 204, 248), (56, 118, 204))
-        rect(d, x0 + 1, y0 + 1, x0 + w - 2, y0 + 2, (40, 86, 166))
-        rect(d, x0 + 3, y0 + 5, x0 + w // 2, y0 + 5, (236, 244, 252))
-        rect(d, x0 + 3, y0 + 8, x0 + w - 6, y0 + 8, (190, 222, 248))
-        rect(d, x0 + 3, y0 + 11, x0 + w // 2 + 2, y0 + 11, (190, 222, 248))
-        for i in range(4):
-            im.putpixel((x0 + w - 4 - i, y0 + 3 + i), (226, 240, 252))
-
-    def keyboard(x0, y0, w=28):
-        rect(d, x0, y0, x0 + w, y0 + 6, (84, 90, 104)); rect(d, x0, y0, x0 + w, y0, (124, 130, 144))
-        for kx in range(x0 + 2, x0 + w - 1, 2):
-            for ky in (y0 + 2, y0 + 4):
-                im.putpixel((kx, ky), (198, 202, 212))
-        rect(d, x0 + 8, y0 + 5, x0 + w - 8, y0 + 5, (198, 202, 212))
-
-    def mouse(x0, y0):
-        d.rounded_rectangle([x0, y0, x0 + 13, y0 + 10], 2, fill=(54, 70, 110))
-        d.ellipse([x0 + 5, y0 + 2, x0 + 9, y0 + 8], fill=(250, 250, 252), outline=(150, 154, 166))
-
-    def plant_pot(cx, cy):
-        rect(d, cx - 4, cy, cx + 4, cy + 8, C["pot"]); rect(d, cx - 4, cy, cx - 3, cy + 8, shade(C["pot"], 24))
-        rect(d, cx + 3, cy, cx + 4, cy + 8, C["pot_d"]); rect(d, cx - 5, cy - 1, cx + 5, cy, shade(C["pot"], -18))
-        for ox, oy, col in ((-4, -4, C["leaf_d"]), (4, -4, C["leaf_d"]), (0, -8, C["leaf"]), (-3, -7, C["leaf"]), (3, -6, C["leaf"])):
-            d.ellipse([cx + ox - 3, cy + oy - 3, cx + ox + 3, cy + oy + 2], fill=col)
-        rect(d, cx - 1, cy - 10, cx, cy - 9, C["leaf_l"]); rect(d, cx - 4, cy - 6, cx - 3, cy - 6, C["leaf_l"])
-
-    def mug(x0, y0, col=(214, 72, 72)):
-        rect(d, x0, y0, x0 + 6, y0 + 7, col); rect(d, x0, y0, x0 + 1, y0 + 7, shade(col, 30))
-        rect(d, x0 + 1, y0, x0 + 5, y0 + 1, (90, 54, 40)); rect(d, x0 + 7, y0 + 2, x0 + 8, y0 + 5, shade(col, -26))
-
-    def papers(x0, y0):
-        rect(d, x0 + 2, y0 + 2, x0 + 15, y0 + 14, (200, 202, 210)); rect(d, x0, y0, x0 + 13, y0 + 12, (252, 252, 254))
-        for ly in range(y0 + 3, y0 + 11, 2):
-            rect(d, x0 + 2, ly, x0 + 10, ly, (176, 180, 192))
-
-    def binders(x0, y0):
-        for i, col in enumerate(((64, 112, 194), (232, 186, 64), (90, 160, 100), (200, 70, 70))):
-            bx = x0 + i * 5
-            rect(d, bx, y0, bx + 4, y0 + 16, col); rect(d, bx, y0, bx, y0 + 16, shade(col, 34))
-            rect(d, bx + 1, y0 + 5, bx + 3, y0 + 8, (246, 246, 250))
-
-    def lamp(x0, y0):
-        d.ellipse([x0, y0 + 14, x0 + 9, y0 + 18], fill=(70, 74, 86))
-        d.line([(x0 + 4, y0 + 15), (x0 + 8, y0 + 7), (x0 + 4, y0 + 3)], fill=(70, 74, 86), width=2)
-        d.polygon([(x0 - 2, y0 + 6), (x0 + 9, y0 + 6), (x0 + 7, y0), (x0, y0)], fill=(250, 210, 80))
-        rect(d, x0, y0, x0 + 7, y0, (255, 236, 150))
-
-    def phone(x0, y0):
-        rect(d, x0, y0, x0 + 11, y0 + 9, C["dark"]); rect(d, x0, y0, x0 + 11, y0, (90, 96, 112))
-        rect(d, x0 + 1, y0 + 2, x0 + 4, y0 + 8, (70, 74, 86))
-        for kx in (x0 + 6, x0 + 8, x0 + 10):
-            for ky in (y0 + 3, y0 + 5, y0 + 7):
-                im.putpixel((kx, ky), (176, 182, 196))
-
-    def laptop(x0, y0):
-        rect(d, x0, y0 + 11, x0 + 21, y0 + 17, (176, 180, 192)); rect(d, x0 + 2, y0 + 12, x0 + 19, y0 + 15, (120, 126, 138))
-        rect(d, x0 + 1, y0, x0 + 20, y0 + 11, (70, 74, 86)); vgrad(d, x0 + 2, y0 + 1, x0 + 19, y0 + 9, (150, 210, 246), (70, 130, 210))
-
-    def sticky(x0, y0):
-        for i, col in enumerate(((252, 226, 110), (250, 170, 190), (160, 220, 170))):
-            rect(d, x0 + i * 7, y0 + (i % 2), x0 + i * 7 + 5, y0 + 5 + (i % 2), col)
-
-    if variant == 2:                                  # dois monitores
-        monitor(16, 30); monitor(50, 30)
-    else:
-        monitor(33, 30)
-    keyboard(33, 30); mouse(68, 29)
-    if variant == 0:
-        binders(6, 6); papers(8, 26); plant_pot(84, 16); mug(80, 31)
-    elif variant == 1:
-        lamp(8, 6); papers(6, 26); phone(78, 8); mug(84, 28, (64, 112, 194))
-    elif variant == 2:
-        papers(6, 27); mug(84, 30); sticky(80, 12)
-    else:
-        laptop(5, 6); plant_pot(86, 16); sticky(6, 30); mug(82, 32, (90, 160, 100))
-    return outline(im)
-
-
-def chair(col, col_d, facing_up=False):
-    """Cadeira de escritório; com facing_up o encosto fica embaixo (pessoa olhando para a mesa acima)."""
-    im = new(); d = ImageDraw.Draw(im)
-    shadow(d, [6, 23, 25, 30])
-    for wx, wy in ((8, 27), (23, 27), (15, 29), (11, 24), (20, 24)):
-        rect(d, wx, wy, wx + 1, wy + 1, (36, 38, 46))
-    seat_y, back_y = ((5, 18), (17, 25)) if facing_up else ((10, 23), (3, 11))
-    d.rounded_rectangle([9, back_y[0], 22, back_y[1]], 3, fill=col_d)
-    rect(d, 11, back_y[0] + 1, 20, back_y[0] + 1, shade(col_d, 26))
-    d.rounded_rectangle([8, seat_y[0], 23, seat_y[1]], 4, fill=col)
-    vgrad(d, 10, seat_y[0] + 2, 21, seat_y[1] - 2, shade(col, 22), shade(col, -14))
-    rect(d, 10, seat_y[0] + 1, 21, seat_y[0] + 1, shade(col, 34))
-    rect(d, 6, seat_y[0] + 3, 7, seat_y[1] - 3, col_d); rect(d, 24, seat_y[0] + 3, 25, seat_y[1] - 3, col_d)
-    return outline(im)
-
-
-def plant(big=False):
-    im = new(); d = ImageDraw.Draw(im)
-    shadow(d, [7, 25, 24, 31])
-    # vaso com luz à esquerda
-    d.polygon([(10, 20), (21, 20), (20, 29), (11, 29)], fill=C["pot"])
-    rect(d, 11, 21, 12, 28, shade(C["pot"], 24)); rect(d, 19, 21, 20, 28, C["pot_d"])
-    rect(d, 9, 19, 22, 21, shade(C["pot"], 10)); rect(d, 9, 19, 22, 19, shade(C["pot"], 34))
-    rect(d, 11, 20, 20, 20, (70, 50, 40))
-    # folhas em leque: as de trás (baixo) escuras, as de cima claras
-    cx, cy, r = 16, (12 if big else 14), (13 if big else 10)
-    leaves = []
-    for i in range(14):
-        ang = math.radians(i * (360 / 14) + 8)
-        length = r - (i % 3) * 1.5
-        leaves.append((math.sin(ang), ang, length))
-    for s_, ang, length in sorted(leaves, key=lambda l: -l[0]):
-        tx, ty = cx + math.cos(ang) * length, cy + math.sin(ang) * length * 0.8
-        nx, ny = -math.sin(ang) * 2.6, math.cos(ang) * 2.6
-        mx, my = cx + math.cos(ang) * length * 0.5, cy + math.sin(ang) * length * 0.4
-        col = C["leaf_d"] if s_ > 0.35 else (C["leaf_l"] if math.cos(ang) < -0.2 and s_ < 0 else C["leaf"])
-        d.polygon([(cx, cy), (mx + nx, my + ny), (tx, ty), (mx - nx, my - ny)], fill=col)
-        if s_ <= 0.35:
-            d.line([(cx, cy), (mx, my)], fill=shade(col, 26))
-    d.ellipse([cx - 3, cy - 3, cx + 3, cy + 2], fill=C["leaf"])
-    return outline(im)
-
-
-def bush():
-    im = new(); d = ImageDraw.Draw(im)
-    shadow(d, [3, 20, 28, 30])
-    d.ellipse([2, 6, 29, 28], fill=C["canopy_d"]); d.ellipse([3, 4, 28, 25], fill=C["canopy"])
-    d.ellipse([7, 7, 17, 15], fill=C["canopy_l"])
-    return im
-
-
-def tree_big():
-    im = new(64, 96); d = ImageDraw.Draw(im)
-    shadow(d, [8, 76, 56, 92])
-    rect(d, 27, 58, 36, 86, C["trunk"]); rect(d, 27, 58, 29, 86, lighten(C["trunk"], 20))
-    d.ellipse([3, 6, 61, 68], fill=C["canopy_d"])
-    d.ellipse([5, 2, 59, 62], fill=C["canopy"])
-    d.ellipse([12, 8, 40, 32], fill=C["canopy_l"]); d.ellipse([34, 20, 52, 36], fill=C["canopy_l"])
-    noise_box = new(64, 96)
-    noise(noise_box, [C["canopy_d"] + (255,)], 90, 21)
-    px, npx = im.load(), noise_box.load()
-    for y in range(4, 60):
-        for x in range(6, 58):
-            if npx[x, y][3] and px[x, y][3]:
-                px[x, y] = npx[x, y]
-    return im
-
-
-def bookshelf(seed):
-    im = new(); d = ImageDraw.Draw(im)
-    rect(d, 1, 1, 30, 30, C["wood_d"]); rect(d, 3, 3, 28, 28, C["wood"])
-    rng = random.Random(seed)
-    for top, bot in ((4, 9), (12, 18), (21, 27)):
-        rect(d, 3, bot + 1, 28, bot + 2, C["wood_d"])
-        x = 4
-        while x < 27:
-            w = rng.randrange(2, 4)
-            col = rng.choice([(200, 70, 70), (70, 120, 200), (230, 190, 70), (90, 160, 100), (230, 230, 235), (150, 90, 160)])
-            rect(d, x, top + rng.randrange(0, 2), min(27, x + w - 1), bot, col)
-            x += w + rng.randrange(0, 2)
-    return im
-
-
-def counter(kind):
-    im = new(); d = ImageDraw.Draw(im)
-    rect(d, 0, 3, 31, 24, (218, 220, 226)); rect(d, 0, 3, 31, 3, (240, 242, 246))
-    rect(d, 0, 25, 31, 30, (176, 180, 190)); rect(d, 15, 26, 16, 29, (150, 154, 164))
-    if kind == "sink":
-        rect(d, 7, 8, 24, 19, (150, 158, 170)); rect(d, 9, 10, 22, 17, (120, 130, 144))
-        rect(d, 15, 5, 16, 9, (110, 116, 128))
-    elif kind == "stove":
-        rect(d, 4, 6, 27, 21, C["dark"])
-        for cx, cy in ((10, 10), (21, 10), (10, 17), (21, 17)):
-            d.ellipse([cx - 3, cy - 3, cx + 3, cy + 3], outline=(120, 124, 134))
-    elif kind == "coffee":
-        rect(d, 10, 4, 21, 18, C["dark"]); rect(d, 12, 13, 19, 16, (90, 94, 104))
-        rect(d, 18, 6, 19, 7, (230, 70, 70)); rect(d, 23, 12, 26, 16, (240, 240, 244))
-    return im
-
-
-def fridge():
-    im = new(); d = ImageDraw.Draw(im)
-    rect(d, 4, 0, 27, 30, C["white_e"]); rect(d, 5, 1, 26, 28, C["white"])
-    rect(d, 5, 10, 26, 10, C["white_e"]); rect(d, 22, 3, 23, 8, (150, 154, 164)); rect(d, 22, 13, 23, 20, (150, 154, 164))
-    return im
-
-
-def cooler():
-    im = new(); d = ImageDraw.Draw(im)
-    shadow(d, [8, 25, 23, 30])
-    rect(d, 10, 14, 21, 28, C["white_e"]); rect(d, 11, 15, 20, 27, C["white"])
-    d.ellipse([9, 1, 22, 16], fill=(120, 190, 238)); rect(d, 12, 4, 13, 9, (190, 228, 250))
-    rect(d, 14, 19, 17, 20, (70, 120, 210))
-    return im
-
-
-def printer():
-    im = new(); d = ImageDraw.Draw(im)
-    rect(d, 3, 9, 28, 27, (206, 208, 216)); rect(d, 3, 22, 28, 27, (170, 174, 184))
-    rect(d, 7, 11, 24, 14, C["dark"]); rect(d, 9, 4, 22, 11, (250, 250, 252))
-    rect(d, 22, 17, 24, 18, (80, 200, 120))
-    return im
-
-
-def cabinet():
-    im = new(); d = ImageDraw.Draw(im)
-    rect(d, 3, 2, 28, 29, (150, 156, 168)); rect(d, 4, 3, 27, 28, (176, 182, 194))
-    for y in (11, 20):
-        rect(d, 4, y, 27, y, (150, 156, 168))
-    for y in (7, 15, 24):
-        rect(d, 13, y, 18, y, (110, 116, 128))
-    return im
-
-
-def sofa_img(w):
-    im = new(w, 32); d = ImageDraw.Draw(im)
-    base, back = (104, 118, 146), (84, 96, 122)
-    shadow(d, [2, 22, w - 3, 31])
-    d.rounded_rectangle([2, 3, w - 3, 13], 3, fill=back)
-    d.rounded_rectangle([2, 11, w - 3, 26], 3, fill=base)
-    d.rounded_rectangle([0, 6, 6, 27], 3, fill=back); d.rounded_rectangle([w - 7, 6, w - 1, 27], 3, fill=back)
-    for x in range(32, w - 8, 32):
-        rect(d, x - 1, 13, x - 1, 24, back)
-    rect(d, 8, 14, w - 10, 14, lighten(base, 26))
-    return im
-
-
-def coffee_table():
-    im = new(); d = ImageDraw.Draw(im)
-    shadow(d, [5, 18, 26, 27])
-    d.rounded_rectangle([5, 10, 26, 24], 3, fill=C["wood_d"])
-    d.rounded_rectangle([5, 9, 26, 21], 3, fill=C["wood"])
-    rect(d, 12, 13, 16, 15, (240, 240, 244))
-    return im
-
-
-def round_table():
-    im = new(); d = ImageDraw.Draw(im)
-    shadow(d, [5, 14, 26, 30])
-    d.ellipse([5, 7, 26, 27], fill=C["white_f"]); d.ellipse([5, 4, 26, 24], fill=C["white"], outline=C["white_e"])
-    rect(d, 13, 12, 17, 15, (210, 90, 80))
-    return im
-
-
-def booth():
-    im = new(); d = ImageDraw.Draw(im)
-    rect(d, 0, 0, 31, 2, (96, 102, 116))
-    rect(d, 0, 5, 20, 27, (204, 206, 214)); rect(d, 0, 28, 20, 30, (160, 164, 176))
-    rect(d, 2, 9, 6, 22, C["dark"]); rect(d, 5, 10, 6, 21, C["screen"])
-    rect(d, 10, 12, 12, 20, (150, 154, 164))
-    return im
-
-
-def sign():
-    im = new(); d = ImageDraw.Draw(im)
-    shadow(d, [9, 26, 22, 31])
-    rect(d, 15, 16, 16, 29, C["wood_d"])
-    d.rounded_rectangle([5, 3, 26, 19], 3, fill=(232, 120, 160))
-    for y in (8, 12):
-        rect(d, 9, y, 22, y, (252, 222, 234))
-    return im
-
-
-def flowers(seed):
-    im = new(); d = ImageDraw.Draw(im)
-    rng = random.Random(seed)
-    for _ in range(5):
-        x, y = rng.randrange(4, 26), rng.randrange(8, 26)
-        rect(d, x + 1, y + 2, x + 1, y + 5, C["leaf_d"])
-        col = rng.choice([(230, 70, 90), (250, 210, 70), (245, 245, 250), (236, 120, 170)])
-        rect(d, x, y, x + 2, y + 2, col); rect(d, x + 1, y + 1, x + 1, y + 1, (250, 230, 120))
-    return im
-
-
-TABLE_COLORS = {
-    "white": (C["white"], C["white_e"], C["white_f"]),
-    "wood": (C["wood_l"], C["wood_d"], C["wood"]),
-    "gray": ((150, 156, 168), (110, 116, 128), (120, 126, 138)),
-}
-
-
-def table_img(color, w, h):
-    top, edge, front = TABLE_COLORS[color]
-    im = new(w, h); d = ImageDraw.Draw(im)
-    d.rounded_rectangle([2, 7, w - 3, h - 1], 4, fill=C["shadow"])
-    d.rounded_rectangle([2, 3, w - 3, h - 4], 4, fill=front)
-    rect(d, 4, h - 6, w - 5, h - 6, shade(front, -16))
-    d.rounded_rectangle([2, 2, w - 3, h - 9], 4, fill=top)
-    vgrad(d, 4, 4, w - 5, h - 11, shade(top, 8), shade(top, -10))
-    rect(d, 4, 3, w - 5, 3, shade(top, 22)); rect(d, 3, h - 9, w - 4, h - 9, edge)
-    return outline(im)
-
-
-LOGO_PATH = ROOT / "assets" / "maju_logo.png"
 
 
 def logo_fit(max_w, max_h):
@@ -612,7 +87,7 @@ def logo_fit(max_w, max_h):
 
 def logo_rug(tw, th):
     im = new(tw * T, th * T); d = ImageDraw.Draw(im)
-    d.rounded_rectangle([2, 4, im.width - 3, im.height - 1], 8, fill=C["shadow"])
+    d.rounded_rectangle([2, 4, im.width - 3, im.height - 1], 8, fill=(0, 0, 0, 50))
     d.rounded_rectangle([2, 2, im.width - 3, im.height - 4], 8, fill=(196, 160, 72))
     d.rounded_rectangle([5, 5, im.width - 6, im.height - 7], 6, fill=(250, 248, 242))
     d.rounded_rectangle([8, 8, im.width - 9, im.height - 10], 5, outline=(222, 200, 140))
@@ -621,208 +96,200 @@ def logo_rug(tw, th):
     return im
 
 
-def logo_wall(tw):
-    im = new(tw * T, T)
-    for i in range(tw):
-        im.paste(face("plain"), (i * T, 0))
-    d = ImageDraw.Draw(im)
-    d.rounded_rectangle([3, 3, im.width - 4, 24], 3, fill=(250, 250, 252), outline=(196, 160, 72))
-    logo = logo_fit(im.width - 14, 18)
-    im.alpha_composite(logo, ((im.width - logo.width) // 2, 5 + (18 - logo.height) // 2))
+def logo_plaque(tw, th):
+    """Placa para a face da parede (2 tiles de altura)."""
+    im = new(tw * T, th * T); d = ImageDraw.Draw(im)
+    d.rounded_rectangle([3, 5, im.width - 4, im.height - 12], 4, fill=(252, 252, 253), outline=(196, 160, 72), width=2)
+    logo = logo_fit(im.width - 18, im.height - 24)
+    im.alpha_composite(logo, ((im.width - logo.width) // 2, 5 + (im.height - 17 - logo.height) // 2))
     return im
-
-
-_LABEL_FONT = None
 
 
 def label_img(text):
-    global _LABEL_FONT
-    if _LABEL_FONT is None:
-        try:
-            _LABEL_FONT = ImageFont.truetype("arialbd.ttf", 13)
-        except OSError:
-            _LABEL_FONT = ImageFont.load_default()
-    probe = ImageDraw.Draw(new())
-    x0, y0, x1, y1 = probe.textbbox((0, 0), text, font=_LABEL_FONT)
+    font = ImageFont.truetype("arialbd.ttf", 13)
+    x0, y0, x1, y1 = ImageDraw.Draw(new()).textbbox((0, 0), text, font=font)
     tiles = math.ceil((x1 - x0 + 8) / T)
     im = new(tiles * T, T); d = ImageDraw.Draw(im)
-    tx = (im.width - (x1 - x0)) // 2 - x0
-    ty = (T - (y1 - y0)) // 2 - y0
+    tx, ty = (im.width - (x1 - x0)) // 2 - x0, (T - (y1 - y0)) // 2 - y0
     for ox, oy in ((-1, 0), (1, 0), (0, -1), (0, 1), (1, 1)):
-        d.text((tx + ox, ty + oy), text, font=_LABEL_FONT, fill=(24, 28, 40, 230))
-    d.text((tx, ty), text, font=_LABEL_FONT, fill=(250, 250, 252, 255))
+        d.text((tx + ox, ty + oy), text, font=font, fill=(24, 28, 40, 230))
+    d.text((tx, ty), text, font=font, fill=(250, 250, 252, 255))
     return im
 
 
-# ---------------------------------------------------------------- registro de tiles
-
-NON_COLLIDING = ("grass", "dgrass", "flowers", "stone", "wood_", "tile_", "slate", "chair", "sofa",
-                 "armchair", "label", "logo_rug", "tree_top", "start")
-_big = {}
-
-
-def big(key, fn):
-    if key not in _big:
-        _big[key] = fn()
-    return _big[key]
+def custom_block(name, im):
+    """Fatia uma imagem em tiles 'AM:nome:i:j' e devolve as referências por posição."""
+    refs = {}
+    for j in range(im.height // T):
+        for i in range(im.width // T):
+            ref = f"AM:{name}:{i}:{j}"
+            _custom[ref] = im.crop((i * T, j * T, i * T + T, j * T + T))
+            refs[(i, j)] = ref
+    return refs
 
 
-def crop(im, i, j):
-    return im.crop((i * T, j * T, i * T + T, j * T + T))
+# ------------------------------------------------------------------------ cena
 
-
-def make_tile(name):
-    kind, _, arg = name.partition(":")
-    simple = {
-        "wall": wall_top, "cliff": cliff, "bush": lambda: outline(bush()), "cooler": lambda: outline(cooler()), "printer": lambda: outline(printer()),
-        "cabinet": lambda: outline(cabinet()), "fridge": fridge, "coffee_table": lambda: outline(coffee_table()), "round_table": lambda: outline(round_table()),
-        "booth_l": booth, "booth_r": lambda: ImageOps.mirror(booth()), "sign": lambda: outline(sign()),
-        "armchair": lambda: outline(sofa_img(32)), "start": new,
-        "stone": lambda: pavers(C["stone"], C["stone_d"], C["stone_l"]),
-        "tile_gray": lambda: pavers(C["tg"], C["tg_d"], C["tg_l"]),
-        "slate": lambda: pavers(C["sl"], C["sl_d"], C["sl_l"], 32),
-        "plant": plant, "plant_big": lambda: plant(True),
-        "chair": lambda: chair(C["chair"], C["chair_d"]),
-        "chair_up": lambda: chair(C["chair"], C["chair_d"], facing_up=True),
-        "chair_yellow": lambda: chair(C["yellow"], C["yellow_d"]),
-        "chair_white": lambda: chair(C["cw"], C["cw_d"]),
-    }
-    if kind in simple:
-        return simple[kind]()
-    if kind == "grass":
-        return grass(int(arg))
-    if kind == "grass_fl":
-        return grass_flowers(int(arg))
-    if kind == "dgrass":
-        return dark_grass(int(arg))
-    if kind == "water":
-        return water(int(arg))
-    if kind == "wood_light":
-        return planks(C["wl"], C["wl_d"], C["wl_l"], int(arg))
-    if kind == "wood_dark":
-        return planks(C["wd"], C["wd_d"], C["wd_l"], int(arg))
-    if kind == "face":
-        return face(arg)
-    if kind == "ext":
-        return ext_face(arg == "win")
-    if kind == "desk":
-        v, i, j = arg.split(":")
-        return crop(big(f"desk-{v}", lambda: desk(int(v))), int(i), int(j))
-    if kind == "shelf":
-        return bookshelf(int(arg))
-    if kind == "counter":
-        return counter(arg)
-    if kind == "flowers":
-        return flowers(int(arg))
-    if kind in ("tree_top", "tree_base"):
-        i = int(arg)
-        return crop(big("tree", lambda: outline(tree_big())), i % 2, i // 2 if kind == "tree_top" else 2)
-    if kind == "sofa":
-        return crop(big("sofa", lambda: outline(sofa_img(64))), int(arg), 0)
-    if kind == "table":                      # table:cor:forma:i:j
-        color, shape, i, j = arg.split(":")
-        w, h = {"9": (96, 96), "h": (96, 32), "v": (32, 96), "s": (32, 32)}[shape]
-        return crop(big(f"table-{color}-{shape}", lambda: table_img(color, w, h)), int(i), int(j))
-    if kind == "logo_rug":
-        i, j = map(int, arg.split(":"))
-        return crop(big("logo_rug", lambda: logo_rug(LOGO_RUG[2], LOGO_RUG[3])), i, j)
-    if kind == "logo_wall":
-        w, i = map(int, arg.split(":"))
-        return crop(big(f"logo_wall-{w}", lambda: logo_wall(w)), i, 0)
-    if kind == "label":                      # label:texto:i
-        text, _, i = arg.rpartition(":")
-        return crop(big(f"label-{text}", lambda: label_img(text)), int(i), 0)
-    raise KeyError(name)
-
-
-class Atlas:
+class Map:
     def __init__(self):
-        self.images, self.gids, self.collides = [], {}, []
+        self.layers = {n: [[None] * W for _ in range(H)] for n in LAYERS}
+        self.blocked = set()
+        self.chairs = []          # (x, y, grupo) para a checagem de espaçamento
+        self.entries = []         # (nome, x, y, descrição)
 
-    def gid(self, name):
-        if name not in self.gids:
-            self.images.append(make_tile(name))
-            self.gids[name] = len(self.images)
-            if not name.startswith(NON_COLLIDING):
-                self.collides.append(len(self.images) - 1)
-        return self.gids[name]
+    def put(self, layer, x, y, ref, block=False):
+        if ref and 0 <= x < W and 0 <= y < H:
+            self.layers[layer][y][x] = ref
+            if block:
+                self.blocked.add((x, y))
 
-    def image(self):
-        rows = math.ceil(len(self.images) / ATLAS_COLS)
-        im = new(ATLAS_COLS * T, rows * T)
-        for k, tile in enumerate(self.images):
-            im.paste(tile, ((k % ATLAS_COLS) * T, (k // ATLAS_COLS) * T))
-        return im
+    def grid(self, layer, x, y, rows, block=False):
+        for j, row in enumerate(rows):
+            for i, ref in enumerate(row.split()):
+                if ref != ".":
+                    self.put(layer, x + i, y + j, ref, block)
+
+    def custom(self, layer, x, y, im_name, im, block=False):
+        for (i, j), ref in custom_block(im_name, im).items():
+            self.put(layer, x + i, y + j, ref, block)
 
 
-# ------------------------------------------------------------------------ layout
-#
-# Tudo espaçado pensando na conversa por proximidade do WorkAdventure: estações de trabalho
-# a 5 tiles (160 px) uma da outra e grupos de mesas separados por corredores largos.
+# ------------------------------------------------------------------------ móveis
 
-# Salas (interior): x0, y0, x1, y1, piso. As paredes nascem em volta de cada sala.
-ROOMS = [
-    (24, 3, 42, 10, "wood_dark"),    # auditório (topo)
-    (44, 3, 57, 10, "tile_gray"),    # recepção (entrada)
-    (24, 12, 57, 44, "wood_light"),  # salão principal
-    (8, 18, 22, 40, "wood_dark"),    # ala de reuniões (esquerda)
-    (8, 41, 22, 44, "wood_light"),   # faixa de passagem
-    (59, 12, 64, 17, "wood_dark"),   # escritório 1
-    (66, 12, 72, 17, "wood_dark"),   # escritório Dra Júlia
-    (59, 19, 72, 20, "wood_light"),  # corredor
-    (59, 22, 72, 31, "tile_gray"),   # lunchroom
-    (59, 33, 66, 44, "wood_light"),  # jurídico - Silvio
-    (50, 46, 66, 54, "wood_dark"),   # sala do dono (diretoria)
-    (24, 46, 48, 55, "wood_light"),  # sala inferior
-]
-CORRIDOR = {(x, y) for x in range(59, 73) for y in (19, 20)}   # corredor aberto: sem face de parede
-DOORS = ([(x, 11) for x in (32, 33, 34)] + [(x, 11) for x in (53, 54, 55)]          # auditório, recepção
-         + [(45, 2), (46, 2)]                                                        # porta da rua
-         + [(23, y) for y in range(26, 45)]                                          # ala de reuniões
-         + [(61, 18), (69, 18), (58, 19), (58, 20), (58, 27), (58, 28), (58, 37), (58, 38)]
-         + [(x, 45) for x in range(33, 39)] + [(55, 45), (56, 45)])                 # sala inferior, diretoria
+DESK_ITEMS = [("Mi64", "De93"), ("Mi1", "Mi58"), ("Mi74", "Mi59"), ("Mi65", "De92")]
 
-FACE_DECOR = {
-    (25, 12): "green", (26, 12): "green", (44, 12): "green", (45, 12): "green", (57, 12): "tv",
-    (10, 18): "green", (11, 18): "green", (12, 18): "green", (13, 18): "green",
-    (17, 18): "board", (18, 18): "board",
-    (69, 22): "tv", (70, 22): "tv", (71, 22): "tv",
-    (63, 33): "art", (64, 46): "art",
-    **{(x, 46): "blue" for x in (26, 29, 41, 44, 47)},
-}
 
-WORK_COLS = (26, 31, 36, 41)          # x da mesa (3x2 tiles); a cadeira fica em (x + 1, y + 2)
-WORK_ROWS = (15, 20, 25, 32, 37)      # 5 fileiras de 4 mesas no salão
-MEETING_ROWS = (15, 23, 31, 39)       # mesas de reunião do salão (2x2, coluna x 48-49)
-WING_ROWS = (21, 29, 37)              # mesas da ala de reuniões (3x2, x 13-15)
+def desk3(m, x, y, v, group):
+    """Mesa de trabalho 3x2 com computador; cadeira embaixo do tile do meio."""
+    m.grid("above1", x, y - 1, ["Ta0 Ta3 Ta1"])
+    m.grid("furniture1", x, y, ["Ta10 Ta13 Ta11", "Ta20 Ta23 Ta21"], block=True)
+    left, right = DESK_ITEMS[v % len(DESK_ITEMS)]
+    m.grid("furniture3", x, y, [f"{left} Mi0 {right}"])
+    m.put("furniture2", x + 1, y + 1, "Se125"); m.put("furniture2", x + 1, y + 2, "Se138")
+    m.chairs.append((x + 1, y + 2, group))
+    return x + 1, y + 2
 
-LABELS = [("Dra Júlia", 69.5, 20),
-          ("LUNCHROOM", 65.5, 30), ("JURÍDICO - SILVIO", 62.5, 43),
-          ("RECEPÇÃO", 50.5, 10)]
 
-LOGO_RUG = (47, 7, 7, 3)              # x, y, largura e altura em tiles (piso da recepção)
-LOGO_WALLS = [(49, 3, 6), (51, 46, 4)]  # x, y, largura: parede da recepção e da diretoria
+def desk2(m, x, y, item, group):
+    """Mesa pequena 2x2 (baia); cadeira embaixo do tile da esquerda."""
+    m.grid("above1", x, y - 1, ["Ta0 Ta1"])
+    m.grid("furniture1", x, y, ["Ta10 Ta11", "Ta20 Ta21"], block=True)
+    m.grid("furniture3", x, y, [f"Mi1 {item}"])
+    m.put("furniture2", x, y + 1, "Se125"); m.put("furniture2", x, y + 2, "Se138")
+    m.chairs.append((x, y + 2, group))
+    return x, y + 2
 
-AREAS = (
-    [("Auditório", 24, 3, 42, 10, {"jitsiRoom": "auditorio"})]
-    + [(f"Reunião {i}", 12, r - 1, 16, r + 2, {"jitsiRoom": f"reuniao-{i}"}) for i, r in enumerate(WING_ROWS, 1)]
-    + [(f"Reunião salão {i}", 47, r - 1, 50, r + 2, {"jitsiRoom": f"reuniao-salao-{i}"})
-       for i, r in enumerate(MEETING_ROWS, 1)]
-    + [("Lunchroom", 59, 22, 72, 31, {"silent": True})]
-)
 
-SPAWN = [(x, y) for x in (55, 56) for y in (8, 9)]   # recepção: entrada padrão (convidados)
-ENTRIES = []                                        # (nome, x, y, descrição) preenchido em build()
+def office_desk(m, x, y, w, items, group):
+    """Mesa de escritório: cadeira do titular atrás (em cima) e visitantes na frente."""
+    m.grid("above1", x, y - 1, ["Ta0 " + "Ta3 " * (w - 2) + "Ta1"])
+    m.grid("furniture1", x, y, ["Ta10 " + "Ta13 " * (w - 2) + "Ta11", "Ta20 " + "Ta23 " * (w - 2) + "Ta21"], block=True)
+    m.grid("furniture3", x, y, [" ".join(items)])
+    m.put("furniture2", x + 1, y - 1, "Se117")
+    m.chairs.append((x + 1, y - 1, group))
+    for gx in (x, x + w - 1):
+        m.put("furniture2", gx, y + 1, "Se125"); m.put("furniture2", gx, y + 2, "Se138")
+        m.chairs.append((gx, y + 2, group))
+    return x + 1, y - 1
+
+
+def glass_table(m, x, y, h, group):
+    """Mesa de reunião de vidro 2 x h com cadeiras dos dois lados."""
+    m.grid("above1", x, y - 1, ["Ta5 Ta6"])
+    rows = ["Ta15 Ta17"] + ["Ta17* Ta17"] * (h - 2) + ["Ta25 Ta27"]
+    m.grid("furniture1", x, y, rows, block=True)
+    for j in range(h - 1):
+        m.put("furniture2", x - 1, y + j, "Se119"); m.put("furniture2", x + 2, y + j, "Se120")
+        m.chairs += [(x - 1, y + j, group), (x + 2, y + j, group)]
+
+
+def wood_table(m, x, y, group):
+    """Mesa de madeira 3x3 com cadeiras em volta."""
+    m.grid("furniture1", x, y, ["Ta200 Ta201 Ta202", "Ta210 Ta211 Ta212", "Ta220 Ta221 Ta222"], block=True)
+    for i in range(3):
+        m.put("furniture2", x + i, y - 1, "Se117")
+        m.put("above2", x + i, y + 2, "Se125"); m.put("furniture2", x + i, y + 3, "Se138")
+        m.chairs += [(x + i, y - 1, group), (x + i, y + 3, group)]
+    for j in range(2):
+        m.put("furniture2", x - 1, y + j, "Se119"); m.put("furniture2", x + 3, y + j, "Se120")
+        m.chairs += [(x - 1, y + j, group), (x + 3, y + j, group)]
+
+
+def cloth_table(m, x, y, group):
+    """Mesa com toalha 3x3 (refeitório) com cadeiras em volta."""
+    m.grid("furniture1", x, y, ["Ta240 Ta241 Ta242", "Ta250 Ta251 Ta252", "Ta260 Ta261 Ta262"], block=True)
+    m.grid("furniture3", x, y + 1, ["Mi58 . Mi59"])
+    for i in range(3):
+        m.put("furniture2", x + i, y - 1, "Se117")
+        m.chairs.append((x + i, y - 1, group))
+    for j in range(2):
+        m.put("furniture2", x - 1, y + j, "Se119"); m.put("furniture2", x + 3, y + j, "Se120")
+        m.chairs += [(x - 1, y + j, group), (x + 3, y + j, group)]
+
+
+def round_table(m, x, y, group):
+    m.put("furniture1", x, y, "Ta143", block=True)
+    m.put("furniture2", x - 1, y, "Se119"); m.put("furniture2", x + 1, y, "Se120")
+    m.chairs += [(x - 1, y, group), (x + 1, y, group)]
+
+
+def plant(m, x, y, kind="tall"):
+    """Plantas de 2 tiles (topo em cima, vaso embaixo bloqueando)."""
+    top, base = {"tall": ("De78", "De90"), "snake": ("De79", "De91"), "grass": ("De75", "De87"),
+                 "grass2": ("De76", "De88")}[kind]
+    m.put("above1", x, y, top); m.put("furniture2", x, y + 1, base, block=True)
+
+
+def palm(m, x, y):
+    m.grid("above1", x, y, ["De60 De61 De62", "De72 De73 De74"])
+    m.grid("furniture2", x, y + 2, ["De84 De85 De86"])
+    m.blocked.add((x + 1, y + 2))
+
+
+def bookshelf(m, x, y):
+    """Estante 2x3 encostada na parede (topo sobre a face)."""
+    m.grid("furniture2", x, y, ["OF22 OF23", "OF34 OF35", "OF46 OF47"])
+    m.grid("furniture2", x, y + 2, ["OF46 OF47"], block=True)
+
+
+def low_cabinet(m, x, y):
+    m.grid("above1", x, y, ["OF19 OF20"]); m.grid("furniture2", x, y + 1, ["OF31 OF32"], block=True)
+
+
+def window(m, x, y, curtains=True):
+    m.grid("deco1", x, y, ["R775 R776", "R800 R801"])
+    if curtains:
+        m.grid("deco2", x, y, ["R779 R780", "R804 R805"])
+
+
+def sofa(m, x, y, w=3):
+    """Sofá bege virado para baixo."""
+    m.grid("furniture2", x, y, ["Se0 " + "Se1 " * (w - 2) + "Se2", "Se13 " + "Se14 " * (w - 2) + "Se15"])
+    for i in range(w):
+        m.chairs.append((x + i, y + 1, "sofa"))
+
+
+def coffee_table(m, x, y):
+    m.grid("above1", x, y - 1, ["Ta45 Ta46"]); m.grid("furniture1", x, y, ["Ta55 Ta56"], block=True)
+
+
+def tree(m, x, y, kind):
+    """Árvore 3x3: copa acima do personagem, tronco bloqueia."""
+    base = (0, 3, 6, 9, 12)[kind]
+    m.grid("above1", x, y, [f"Ex{base} Ex{base + 1} Ex{base + 2}", f"Ex{base + 25} Ex{base + 26} Ex{base + 27}"])
+    m.grid("furniture1", x, y + 2, [f"Ex{base + 50} Ex{base + 51} Ex{base + 52}"])
+    m.blocked.add((x + 1, y + 2))
+
+
+# ------------------------------------------------------------------------ construção
+
+WALL_TILE = {0: 106, 1: 56, 4: 31, 2: 58, 8: 59, 5: 102, 10: 104, 6: 28, 12: 29, 3: 53, 9: 54,
+             7: 108, 13: 158, 11: 110, 14: 160, 15: 100}
 
 
 def build():
     rng = random.Random(42)
-    layers = {k: [[None] * W for _ in range(H)] for k in ("floor", "walls", "furniture", "labels", "above", "start")}
-
-    def put(layer, x, y, name):
-        if 0 <= x < W and 0 <= y < H:
-            layers[layer][y][x] = name
-
+    m = Map()
     inside = lambda x, y: 0 <= x < W and 0 <= y < H
 
     interior = {}
@@ -831,359 +298,377 @@ def build():
             for x in range(x0, x1 + 1):
                 interior[(x, y)] = f
     for c in DOORS:
-        interior[c] = "wood_light"
+        interior[c] = "hall"
     footprint = {(x, y) for x0, y0, x1, y1, _ in ROOMS
                  for y in range(y0 - 1, y1 + 2) for x in range(x0 - 1, x1 + 2) if inside(x, y)}
     walls = footprint - interior.keys()
-    ext_faces = {(x, y + 1) for x, y in walls if inside(x, y + 1) and (x, y + 1) not in footprint}
 
-    # ---- terreno externo
-    water_cells = {(0, y) for y in range(10, H)}
-    water_cells |= {(x, y) for y in range(H) for x in range(W)
-                    if ((x - 11.5) / 7.2) ** 2 + ((y - 56.5) / 6.2) ** 2 <= 1}
-    cliff_cells = {(1, y) for y in range(9, H)} | {(0, 9)}
-    stone_cells = {(x, y) for x in (45, 46) for y in range(0, 2)}
-    near_building = {(x + dx, y + dy) for x, y in footprint | ext_faces for dx in (-1, 0, 1) for dy in (-1, 0, 1)}
-    blocked_out = footprint | water_cells | cliff_cells | stone_cells | ext_faces
-    patches = [(rng.uniform(2, W - 2), rng.uniform(2, H - 2), rng.uniform(1.8, 3.4)) for _ in range(26)]
-    dark = {(x, y) for y in range(H) for x in range(W) if (x, y) not in blocked_out
-            and any(math.hypot(x - cx, y - cy) <= r for cx, cy, r in patches)}
+    # ---- pisos e paredes
+    for (x, y), f in interior.items():
+        m.put("floor", x, y, FLOORS[f])
+    for x, y in walls:
+        mask = sum(bit for bit, (dx, dy) in ((1, (0, -1)), (2, (1, 0)), (4, (0, 1)), (8, (-1, 0)))
+                   if (x + dx, y + dy) in walls)
+        m.put("walls", x, y, f"R{WALL_TILE[mask]}", block=True)
+    for x, y in walls:
+        below = (x, y + 1)
+        if below in interior and below not in CORRIDOR and below not in DOORS:
+            narrow = m.layers["walls"][y][x] == "R56"
+            m.put("walls", x, y + 1, "R280" if narrow else "R203", block=True)
+            if (x, y + 2) in interior and (x, y + 2) not in DOORS:
+                m.put("walls", x, y + 2, "R305" if narrow else "R228", block=True)
+        elif inside(*below) and below not in footprint:
+            m.put("walls", x, y + 1, "R310", block=True)
+            if inside(x, y + 2) and (x, y + 2) not in footprint:
+                m.put("walls", x, y + 2, "R310", block=True)
+    ext_faces = {(x, y) for y in range(H) for x in range(W) if m.layers["walls"][y][x] == "R310"}
 
-    def mask(cells, x, y):
-        m = 0
-        for bit, (dx, dy) in ((1, (0, -1)), (2, (1, 0)), (4, (0, 1)), (8, (-1, 0))):
-            nx, ny = x + dx, y + dy
-            if inside(nx, ny) and (nx, ny) not in cells:
-                m |= bit
-        return m
-
+    # ---- área externa
+    water = {(x, y) for x in (0, 1) for y in range(12, H)}
+    water |= {(x, y) for y in range(H) for x in range(W)
+              if ((x - 11.5) / 7.2) ** 2 + ((y - 56.5) / 6.2) ** 2 <= 1}
+    path = {(x, y) for x in (45, 46) for y in (0, 1)}
+    outside_busy = footprint | ext_faces | water | path
     for y in range(H):
         for x in range(W):
-            c = (x, y)
-            if c in interior:
-                f = interior[c]
-                put("floor", x, y, f"{f}:{rng.randrange(3)}" if f.startswith("wood") else f)
-            elif c in walls:
-                put("walls", x, y, "wall")
-            elif c in water_cells:
-                put("floor", x, y, f"water:{mask(water_cells, x, y)}")
-            elif c in cliff_cells:
-                put("floor", x, y, "cliff")
-            elif c in stone_cells:
-                put("floor", x, y, "stone")
-            elif c in dark:
-                put("floor", x, y, f"dgrass:{mask(dark, x, y)}")
+            if (x, y) in footprint or (x, y) in ext_faces:
+                continue
+            if (x, y) in water:
+                m.put("floor", x, y, "Ex676", block=True)
+            elif (x, y) in path:
+                m.put("floor", x, y, "Ex650")
             else:
-                put("floor", x, y, f"grass_fl:{rng.randrange(3)}" if rng.random() < 0.05 else f"grass:{rng.randrange(4)}")
+                m.put("floor", x, y, "Ex628")
+    for x, y in [(6, 52), (14, 54), (9, 59), (16, 58), (0, 30), (1, 44)]:
+        if (x, y) in water:
+            m.put("floor2", x, y, rng.choice(["Ex656", "Ex657", "Ex658", "Ex681"]))
+    m.put("floor2", 12, 56, "Ex659")                                         # patinho
 
-    for (x, y) in interior:
-        if (x, y) not in DOORS and (x, y) not in CORRIDOR and (x, y - 1) in walls:
-            put("walls", x, y, f"face:{FACE_DECOR.get((x, y), 'plain')}")
-    for (x, y) in ext_faces:
-        put("walls", x, y, "ext:win" if x % 3 == 1 else "ext:plain")
-    for lx, ly, lw in LOGO_WALLS:
-        for i in range(lw):
-            put("walls", lx + i, ly, f"logo_wall:{lw}:{i}")
+    used = set()
+    near = {(x + dx, y + dy) for x, y in outside_busy for dx in (-1, 0, 1) for dy in (-1, 0, 1)}
 
-    # ---- vegetação externa (espalhada, longe das paredes e da água)
-    used = set(near_building)
+    def free(cells):
+        return all(inside(*c) and c not in near and c not in used for c in cells)
+
     trees = 0
-    for _ in range(4000):
-        if trees >= 30:
+    for _ in range(5000):
+        if trees >= 34:
             break
-        tx, ty = rng.randrange(1, W - 2), rng.randrange(0, H - 3)
-        cells = {(tx + i, ty + j) for i in range(2) for j in range(3)}
-        halo = {(x + dx, y + dy) for x, y in cells for dx in (-1, 0, 1) for dy in (-1, 0, 1)}
-        if any(not inside(*c) or c in blocked_out or c in used for c in halo if inside(*c)):
-            continue
-        used |= halo; trees += 1
-        for i in range(2):
-            put("above", tx + i, ty, f"tree_top:{i}")
-            put("above", tx + i, ty + 1, f"tree_top:{i + 2}")
-            put("furniture", tx + i, ty + 2, f"tree_base:{i}")
+        tx, ty = rng.randrange(0, W - 2), rng.randrange(0, H - 2)
+        cells = {(tx + i, ty + j) for i in range(3) for j in range(3)}
+        if free(cells):
+            used |= {(x + dx, y + dy) for x, y in cells for dx in (-1, 0, 1) for dy in (-1, 0, 1)}
+            tree(m, tx, ty, rng.randrange(5)); trees += 1
     bushes = 0
-    for _ in range(4000):
-        if bushes >= 22:
+    for _ in range(3000):
+        if bushes >= 26:
             break
-        bx, by = rng.randrange(2, W), rng.randrange(0, H)
-        if (bx, by) in blocked_out or (bx, by) in used:
+        bx, by = rng.randrange(0, W - 1), rng.randrange(0, H)
+        kind = rng.choice(["bush2", "bush2b", "bush1", "rock", "rock2"])
+        cells = {(bx, by), (bx + 1, by)} if kind.startswith("bush2") else {(bx, by)}
+        if not free(cells):
             continue
-        put("furniture", bx, by, "bush"); used.add((bx, by)); bushes += 1
-    put("furniture", 10, 12, "sign")
-    for x in range(11, 16):
-        put("furniture", x, 12, f"flowers:{x}")
+        used |= cells; bushes += 1
+        if kind == "bush2":
+            m.grid("furniture1", bx, by, ["Ex450 Ex451"], block=True)
+        elif kind == "bush2b":
+            m.grid("furniture1", bx, by, ["Ex452 Ex453"], block=True)
+        elif kind == "bush1":
+            m.put("furniture1", bx, by, "Ex454", block=True)
+        else:
+            m.put("furniture1", bx, by, "Ex478" if kind == "rock" else "Ex480", block=True)
+    decos = ["Ex506", "Ex507", "Ex508", "Ex509", "Ex575", "Ex576", "Ex577", "Ex578", "Ex579",
+             "Ex581", "Ex582", "Ex583", "Ex584", "Ex600", "Ex601", "Ex602", "Ex603", "Ex605", "Ex606", "Ex607"]
+    for _ in range(260):
+        x, y = rng.randrange(W), rng.randrange(H)
+        if (x, y) not in outside_busy and (x, y) not in used:
+            m.put("floor2", x, y, rng.choice(decos)); used.add((x, y))
+    for fx, fy, block in [(3, 4, ["Ex525 Ex526 Ex527", "Ex550 Ex551 Ex552"]), (76, 6, ["Ex533 Ex534", "Ex558 Ex559"]),
+                          (77, 40, ["Ex528 Ex529 Ex530", "Ex553 Ex554 Ex555"]), (30, 59, ["Ex533 Ex534", "Ex558 Ex559"])]:
+        cells = {(fx + i, fy + j) for j, row in enumerate(block) for i in range(len(row.split()))}
+        if all(c not in outside_busy for c in cells):
+            m.grid("floor2", fx, fy, block)
+    for bx, by in [(18, 50), (4, 47)]:                                     # bancos perto do lago
+        if free({(bx, by), (bx + 1, by)}):
+            m.grid("furniture1", bx, by, ["Se143 Se144"]); used |= {(bx, by), (bx + 1, by)}
 
-    # ---- mobiliário
-    def table(color, x0, y0, x1, y1):
-        w, h = x1 - x0 + 1, y1 - y0 + 1
-        for y in range(y0, y1 + 1):
-            for x in range(x0, x1 + 1):
-                i = 0 if x == x0 else (2 if x == x1 else 1)
-                j = 0 if y == y0 else (2 if y == y1 else 1)
-                if w > 1 and h > 1:
-                    put("furniture", x, y, f"table:{color}:9:{i}:{j}")
-                elif h == 1 and w > 1:
-                    put("furniture", x, y, f"table:{color}:h:{i}:0")
-                elif w == 1 and h > 1:
-                    put("furniture", x, y, f"table:{color}:v:0:{j}")
-                else:
-                    put("furniture", x, y, f"table:{color}:s:0:0")
+    # ---- recepção
+    m.custom("deco1", 48, 3, "logo_plaque", logo_plaque(6, 2))
+    m.custom("floor2", 47, 8, "logo_rug", logo_rug(7, 3))
+    m.grid("above1", 48, 5, ["Ta0 Ta3 Ta3 Ta3 Ta1"])
+    m.grid("furniture1", 48, 6, ["Ta10 Ta13 Ta13 Ta13 Ta11", "Ta20 Ta23 Ta23 Ta23 Ta21"], block=True)
+    m.grid("furniture3", 48, 6, ["Mi74 Mi0 . Mi58 De93"])
+    m.put("furniture2", 50, 5, "Se117")
+    sofa(m, 44, 5)
+    coffee_table(m, 44, 8)
+    plant(m, 44, 9, "snake"); plant(m, 57, 5, "tall"); plant(m, 57, 9, "grass")
 
-    def ring(x0, y0, x1, y1, chair_name, sides="nsew"):
-        """Cadeiras em volta de uma mesa."""
-        for x in range(x0, x1 + 1):
-            if "n" in sides: put("furniture", x, y0 - 1, chair_name)
-            if "s" in sides: put("furniture", x, y1 + 1, chair_name)
-        for y in range(y0, y1 + 1):
-            if "w" in sides: put("furniture", x0 - 1, y, chair_name)
-            if "e" in sides: put("furniture", x1 + 1, y, chair_name)
+    # ---- auditório
+    m.grid("deco1", 32, 3, ["Mi40 Mi41 Mi42", "Mi50 Mi51 Mi52"])
+    m.put("furniture2", 33, 5, "OF104", block=True)
+    for row in (6, 8):
+        for x in list(range(26, 31)) + list(range(36, 41)):
+            m.put("furniture2", x, row, "Se125"); m.put("furniture2", x, row + 1, "Se138")
+    plant(m, 24, 5, "tall"); plant(m, 42, 5, "tall")
+    window(m, 26, 3); window(m, 39, 3)
 
-    f = lambda x, y, n: put("furniture", x, y, n)
-
-    # auditório
-    for y in range(5, 10):
-        for x in (26, 27, 28, 29, 31, 32, 33, 34, 35):
-            f(x, y, "chair")
-    table("wood", 38, 5, 39, 7)
-    f(41, 4, "plant_big"); f(24, 9, "plant"); f(41, 9, "plant")
-
-    # salão principal: estações individuais a 5 tiles (160 px) uma da outra
-    ENTRIES.clear()
+    # ---- salão principal
     for k, (x, y) in enumerate((x, y) for y in WORK_ROWS for x in WORK_COLS):
-        v = (k * 3 + y) % 4
-        for i in range(3):
-            for j in range(2):
-                f(x + i, y + j, f"desk:{v}:{i}:{j}")
-        f(x + 1, y + 2, "chair_up")
-        ENTRIES.append((f"mesa-{k + 1:02d}", x + 1, y + 2, f"Salão, fileira {WORK_ROWS.index(y) + 1}, "
-                        f"posição {WORK_COLS.index(x) + 1}"))
-    for ty in MEETING_ROWS:
-        table("white", 48, ty, 49, ty + 1)
-        ring(48, ty, 49, ty + 1, "chair")
-    f(28, 13, "cooler"); f(38, 13, "printer"); f(39, 13, "cabinet"); f(51, 13, "cabinet")
-    f(57, 13, "plant_big"); f(24, 13, "plant_big"); f(45, 44, "plant"); f(57, 44, "plant_big")
-    f(24, 29, "plant"); f(44, 29, "plant"); f(24, 41, "plant"); f(44, 41, "plant")
-    rx, ry, rw, rh = LOGO_RUG
-    for j in range(rh):
-        for i in range(rw):
-            put("labels", rx + i, ry + j, f"logo_rug:{i}:{j}")
+        cx, cy = desk3(m, x, y, k, "mesa")
+        m.entries.append((f"mesa-{k + 1:02d}", cx, cy,
+                          f"Salão, fileira {WORK_ROWS.index(y) + 1}, posição {WORK_COLS.index(x) + 1}"))
+    for i, ty in enumerate(MEETING_ROWS):
+        glass_table(m, 48, ty, 4, f"reuniao-salao-{i}")
+    for wx in (25, 44):
+        window(m, wx, 12)
+    window(m, 47, 12, curtains=False)
+    m.put("deco1", 41, 12, "Mi78")                                      # relógio
+    m.grid("deco1", 30, 12, ["De77", "De89"]); m.grid("deco1", 51, 12, ["De77", "De89"])
+    m.grid("furniture2", 30, 13, ["Mi46", "Mi56"]); m.blocked.add((30, 14))   # cafeteira
+    m.put("furniture2", 29, 14, "Mi60", block=True)
+    m.grid("furniture2", 35, 13, ["Mi27", "Mi37"]); m.blocked.add((35, 14))   # copiadora
+    low_cabinet(m, 45, 13)
+    plant(m, 24, 13, "tall"); plant(m, 57, 13, "tall")
+    plant(m, 24, 29, "snake"); plant(m, 45, 29, "snake"); plant(m, 24, 42, "grass"); plant(m, 45, 42, "grass")
+    palm(m, 55, 41)
 
-    # recepção
-    table("wood", 49, 5, 53, 5); f(51, 4, "chair")
-    f(44, 4, "cooler"); f(57, 4, "plant_big"); f(44, 10, "plant"); f(57, 10, "plant")
-    f(44, 7, "sofa:0"); f(45, 7, "sofa:1"); f(44, 9, "armchair")
-    f(56, 5, "sofa:0"); f(57, 5, "sofa:1")
+    # ---- ala de reuniões
+    for i, ty in enumerate(WING_ROWS):
+        wood_table(m, 13, ty, f"reuniao-{i}")
+    window(m, 9, 18); window(m, 19, 18)
+    m.grid("deco1", 14, 18, ["De24 De25"])
+    m.grid("furniture2", 19, 25, ["Mi33 Mi34 Mi35", "Mi43 Mi44 Mi45", "Mi53 Mi54 Mi55"])
+    for i in range(3):
+        m.blocked.add((19 + i, 27))
+    plant(m, 8, 20, "tall"); plant(m, 22, 20, "tall"); plant(m, 8, 33, "snake"); palm(m, 8, 38)
 
-    # ala de reuniões
-    for ty in WING_ROWS:
-        table("white", 13, ty, 15, ty + 1)
-        ring(13, ty, 15, ty + 1, "chair")
-    f(8, 19, "plant_big"); f(22, 19, "plant"); f(8, 25, "plant"); f(8, 33, "plant"); f(8, 40, "plant_big"); f(22, 40, "plant")
+    # ---- escritórios
+    bookshelf(m, 59, 12)
+    m.entries.append(("escritorio-1", *office_desk(m, 61, 15, 2, ["Mi1", "Mi64"], "escritorio-1"), "Escritório 1"))
+    plant(m, 64, 13, "snake"); m.put("deco1", 63, 12, "De2")
+    bookshelf(m, 66, 12)
+    m.entries.append(("dra-julia", *office_desk(m, 69, 15, 2, ["Mi1", "De93"], "dra-julia"), "Escritório Dra Júlia"))
+    plant(m, 72, 13, "tall"); m.grid("deco1", 70, 12, ["De0 De1"])
 
-    # escritório 1
-    f(59, 12, "shelf:1"); f(60, 12, "shelf:2"); f(64, 13, "plant")
-    table("white", 61, 14, 62, 14); f(61, 13, "chair"); f(61, 15, "chair_white"); f(62, 15, "chair_white")
-    # escritório Dra Júlia
-    f(66, 12, "shelf:3"); f(67, 12, "shelf:4"); f(72, 13, "plant")
-    table("white", 69, 14, 70, 14); f(69, 13, "chair"); f(69, 15, "chair_white"); f(70, 15, "chair_white")
+    # ---- lunchroom (área silenciosa)
+    m.grid("furniture1", 60, 23, ["Ta95 " + "Ta96 " * 5 + "Ta97", "Ta105 " + "Ta106 " * 5 + "Ta107"], block=True)
+    m.grid("furniture3", 61, 24, ["Mi57 . Mi58 . Mi59"])
+    m.grid("deco1", 69, 22, ["Mi40 Mi41 Mi42", "Mi50 Mi51 Mi52"])
+    cloth_table(m, 61, 27, "lunch-1"); cloth_table(m, 67, 27, "lunch-2")
+    plant(m, 59, 29, "tall"); plant(m, 72, 29, "tall")
+    m.put("furniture2", 72, 24, "Mi61", block=True)
 
-    # lunchroom (área silenciosa)
-    for x, kind in zip(range(59, 65), ("plain", "sink", "stove", "coffee", "plain", "plain")):
-        f(x, 22, f"counter:{kind}")
-    f(66, 23, "fridge")
-    table("gray", 63, 26, 68, 27)
-    ring(63, 26, 68, 27, "chair_yellow")
-    f(59, 31, "plant"); f(72, 31, "plant_big"); f(72, 24, "plant")
+    # ---- jurídico - Silvio
+    bookshelf(m, 59, 33); m.grid("deco1", 63, 33, ["De24 De25"])
+    m.entries.append(("juridico-silvio", *office_desk(m, 61, 37, 3, ["Mi64", "Mi0", "Mi58"], "juridico"), "Jurídico - Silvio"))
+    coffee_table(m, 61, 41)
+    m.grid("furniture2", 60, 43, ["Se20 Se21 Se22"]); m.chairs += [(60, 43, "sofa"), (61, 43, "sofa"), (62, 43, "sofa")]
+    m.grid("furniture2", 64, 41, ["Se36", "Se49"])
+    plant(m, 66, 35, "tall"); plant(m, 66, 42, "snake")
 
-    # jurídico - Silvio
-    f(59, 33, "shelf:5"); f(60, 33, "shelf:6"); f(66, 34, "plant")
-    table("white", 61, 36, 63, 36); f(62, 35, "chair")
-    for x in (61, 62, 63):
-        f(x, 37, "chair_white")
-    f(60, 41, "sofa:0"); f(61, 41, "sofa:1"); f(63, 41, "coffee_table"); f(65, 41, "armchair")
-    f(66, 44, "plant"); f(59, 44, "plant")
+    # ---- diretoria
+    m.custom("deco1", 51, 46, "logo_plaque_dir", logo_plaque(4, 2))
+    bookshelf(m, 57, 46); bookshelf(m, 59, 46)
+    m.entries.append(("diretoria", *office_desk(m, 55, 50, 4, ["Mi64", "Mi0", "Mi1", "De93"], "diretoria"), "Diretoria"))
+    for y in range(48, 54):
+        for x in range(60, 66):
+            m.put("floor", x, y, "R360")
+    m.grid("furniture2", 61, 48, ["Se0 Se1 Se1 Se2", "Se13 Se14 Se14 Se15"])
+    coffee_table(m, 62, 51)
+    m.grid("furniture2", 60, 50, ["Se59", "Se72"]); m.grid("furniture2", 65, 50, ["Se36", "Se49"])
+    plant(m, 50, 48, "tall"); plant(m, 50, 53, "snake"); plant(m, 66, 53, "tall")
+    m.grid("deco1", 63, 46, ["De3"]); m.grid("deco1", 61, 46, ["De26"])
 
-    # sala do dono (diretoria)
-    f(57, 46, "shelf:7"); f(58, 46, "shelf:8"); f(59, 46, "shelf:9")
-    table("wood", 57, 49, 59, 49); f(58, 48, "chair")
-    f(57, 50, "chair_white"); f(59, 50, "chair_white")
-    f(62, 51, "sofa:0"); f(63, 51, "sofa:1"); f(64, 52, "coffee_table"); f(65, 51, "armchair")
-    f(50, 47, "plant_big"); f(66, 47, "plant_big"); f(50, 54, "plant"); f(66, 54, "plant")
+    # ---- sala inferior
+    for wx in (26, 29, 41, 44):
+        window(m, wx, 46, curtains=False)
+    for name, (bx, by), item in [("baia-1", (25, 48), "Mi65"), ("baia-2", (25, 53), "De92"),
+                                 ("baia-3", (46, 48), "Mi58"), ("baia-4", (46, 53), "Mi74")]:
+        cx, cy = desk2(m, bx, by, item, name)
+        lado = "esquerda" if bx < 30 else "direita"
+        m.entries.append((name, cx, cy, f"Sala inferior, baia {lado} de {'cima' if by < 51 else 'baixo'}"))
+    for tx, ty in ((31, 49), (36, 49), (41, 49), (31, 53), (36, 53), (41, 53)):
+        round_table(m, tx, ty, f"redonda-{tx}-{ty}")
+    plant(m, 28, 54, "snake"); plant(m, 44, 54, "snake")
 
-    # sala inferior
-    for y in (47, 52):                       # baias espaçadas (5 tiles)
-        f(24, y, "booth_l"); f(25, y, "chair_white")
-        f(48, y, "booth_r"); f(47, y, "chair_white")
-    for tx, ty in ((30, 48), (36, 48), (42, 48), (30, 53), (36, 53), (42, 53)):
-        f(tx, ty, "round_table"); f(tx - 1, ty, "chair_white"); f(tx + 1, ty, "chair_white")
-    f(24, 55, "plant"); f(48, 55, "plant"); f(24, 50, "plant"); f(48, 50, "plant")
-
-    # ---- rótulos
+    # ---- rótulos e entrada padrão
     for text, cx, row in LABELS:
-        n = label_img(text).width // T
-        start = round(cx - n / 2)
-        for i in range(n):
-            put("labels", start + i, row, f"label:{text}:{i}")
-
-    ENTRIES.extend([
-        ("baia-1", 25, 47, "Sala inferior, baia esquerda de cima"), ("baia-2", 25, 52, "Sala inferior, baia esquerda de baixo"),
-        ("baia-3", 47, 47, "Sala inferior, baia direita de cima"), ("baia-4", 47, 52, "Sala inferior, baia direita de baixo"),
-        ("escritorio-1", 61, 13, "Escritório 1"), ("dra-julia", 69, 13, "Escritório Dra Júlia"),
-        ("juridico-silvio", 62, 35, "Jurídico - Silvio"), ("diretoria", 58, 48, "Diretoria"),
-    ])
-
-    # ---- spawn
+        im = label_img(text)
+        start = round(cx - im.width // T / 2)
+        m.custom("labels", start, row, f"label-{text}", im)
     for x, y in SPAWN:
-        put("start", x, y, "start")
-
-    return layers
+        m.put("start", x, y, "SZ1")
+    return m
 
 
 # ------------------------------------------------------------------------ saída
 
-LAYER_ORDER = ["floor", "walls", "furniture", "labels", "floorLayer", "above", "start"]
+def write_outputs(m):
+    # tileset próprio
+    custom_refs = sorted(_custom)
+    cols = 8
+    amz = new(cols * T, math.ceil(len(custom_refs) / cols) * T)
+    amz_index = {}
+    for k, ref in enumerate(custom_refs):
+        amz.paste(_custom[ref], ((k % cols) * T, (k // cols) * T))
+        amz_index[ref] = k
+    amz.save(ROOT / "tilesets" / "amz.png")
 
+    firstgid, tilesets, gid_base = 1, [], {}
+    for key, name in WA_TILESETS:
+        im = ts_image(key)
+        gid_base[key] = firstgid
+        ts = {"firstgid": firstgid, "name": name, "image": f"tilesets/wa/{name}.png",
+              "imagewidth": im.width, "imageheight": im.height, "tilewidth": T, "tileheight": T,
+              "tilecount": ts_count(key), "columns": ts_columns(key), "margin": 0, "spacing": 0,
+              "properties": [{"name": "tilesetCopyright", "type": "string",
+                              "value": "WorkAdventure - WorkAdventure specific resources license (tilesets/wa/LICENSE.assets)"}]}
+        if key == "SZ":
+            ts["tiles"] = [{"id": 2, "properties": [{"name": "collides", "type": "bool", "value": True}]}]
+        tilesets.append(ts)
+        firstgid += ts_count(key)
+    gid_base["AM"] = firstgid
+    tilesets.append({"firstgid": firstgid, "name": "amz", "image": "tilesets/amz.png",
+                     "imagewidth": amz.width, "imageheight": amz.height, "tilewidth": T, "tileheight": T,
+                     "tilecount": len(custom_refs), "columns": cols, "margin": 0, "spacing": 0})
 
-def write_outputs(layers):
-    atlas = Atlas()
-    data = {k: [atlas.gid(n) if n else 0 for row in rows for n in row] for k, rows in layers.items()}
+    def gid(ref):
+        if ref.startswith("AM:"):
+            return gid_base["AM"] + amz_index[ref]
+        flip = ref.endswith("*")
+        key, local = parse(ref.rstrip("*"))
+        return (gid_base[key] + local) | (FLIP if flip else 0)
 
-    tileset_png = ROOT / "tilesets" / "escritorio.png"
-    tileset_png.parent.mkdir(exist_ok=True)
-    sheet = atlas.image()
-    sheet.save(tileset_png)
+    for x, y in m.blocked:
+        m.put("collisions", x, y, "SZ2")
+
+    tmj_layers, lid = [], 0
+
+    def tile_layer(name, data, props=None):
+        nonlocal lid
+        lid += 1
+        layer = {"id": lid, "name": name, "type": "tilelayer", "width": W, "height": H, "data": data,
+                 "opacity": 1, "visible": True, "x": 0, "y": 0}
+        if props:
+            layer["properties"] = props
+        tmj_layers.append(layer)
 
     objects = []
     for k, (name, x0, y0, x1, y1, props) in enumerate(AREAS, start=1):
-        objects.append({
-            "id": k, "name": name, "type": "area", "class": "area",
-            "x": x0 * T, "y": y0 * T, "width": (x1 - x0 + 1) * T, "height": (y1 - y0 + 1) * T,
-            "rotation": 0, "visible": True,
-            "properties": [{"name": key, "type": "bool" if isinstance(val, bool) else "string", "value": val}
-                           for key, val in props.items()],
-        })
-
-    tmj_layers = []
-    for lid, name in enumerate(LAYER_ORDER, start=1):
+        objects.append({"id": k, "name": name, "type": "area", "class": "area",
+                        "x": x0 * T, "y": y0 * T, "width": (x1 - x0 + 1) * T, "height": (y1 - y0 + 1) * T,
+                        "rotation": 0, "visible": True,
+                        "properties": [{"name": key, "type": "bool" if isinstance(val, bool) else "string", "value": val}
+                                       for key, val in props.items()]})
+    start_gid = gid("SZ1")
+    for name in LAYERS:
         if name == "floorLayer":
+            lid += 1
             tmj_layers.append({"id": lid, "name": name, "type": "objectgroup", "draworder": "topdown",
                                "objects": objects, "opacity": 1, "visible": True, "x": 0, "y": 0})
-        else:
-            tmj_layers.append({"id": lid, "name": name, "type": "tilelayer", "width": W, "height": H,
-                               "data": data[name], "opacity": 1, "visible": True, "x": 0, "y": 0})
-
-    start_gid = atlas.gid("start")
-    for name, ex, ey, _ in ENTRIES:
-        layer_data = [0] * (W * H); layer_data[ey * W + ex] = start_gid
-        tmj_layers.append({"id": len(tmj_layers) + 1, "name": name, "type": "tilelayer", "width": W, "height": H,
-                           "data": layer_data, "opacity": 1, "visible": True, "x": 0, "y": 0,
-                           "properties": [{"name": "startLayer", "type": "bool", "value": True}]})
+            continue
+        tile_layer(name, [gid(r) if r else 0 for row in m.layers[name] for r in row])
+        if name == "start":   # pontos de entrada nomeados logo depois, também escondidos sob o piso
+            for ename, ex, ey, _ in m.entries:
+                data = [0] * (W * H); data[ey * W + ex] = start_gid
+                tile_layer(ename, data, [{"name": "startLayer", "type": "bool", "value": True}])
 
     tmj = {
-        "compressionlevel": -1, "type": "map", "version": "1.10", "tiledversion": "1.10.2",
+        "compressionlevel": -1, "type": "map", "version": "1.10", "tiledversion": "1.11.2",
         "orientation": "orthogonal", "renderorder": "right-down", "infinite": False,
         "width": W, "height": H, "tilewidth": T, "tileheight": T,
-        "nextlayerid": len(tmj_layers) + 1, "nextobjectid": len(objects) + 1,
+        "nextlayerid": lid + 1, "nextobjectid": len(objects) + 1,
         "properties": [
             {"name": "mapName", "type": "string", "value": "Escritório"},
             {"name": "mapDescription", "type": "string", "value": "Escritório virtual"},
+            {"name": "mapCopyright", "type": "string",
+             "value": "Tilesets: WorkAdventure (https://workadventu.re) - WorkAdventure specific resources license"},
         ],
-        "layers": tmj_layers,
-        "tilesets": [{
-            "firstgid": 1, "name": "escritorio", "image": "tilesets/escritorio.png",
-            "imagewidth": sheet.width, "imageheight": sheet.height,
-            "tilewidth": T, "tileheight": T, "tilecount": len(atlas.images), "columns": ATLAS_COLS,
-            "margin": 0, "spacing": 0,
-            "tiles": [{"id": i, "properties": [{"name": "collides", "type": "bool", "value": True}]}
-                      for i in atlas.collides],
-        }],
+        "layers": tmj_layers, "tilesets": tilesets,
     }
     (ROOT / "escritorio.tmj").write_text(json.dumps(tmj, ensure_ascii=False, indent=1), encoding="utf-8")
 
     # ---- prévias
+    def tile_of(ref):
+        if ref.startswith("AM:"):
+            return _custom[ref]
+        im = tile_image(*parse(ref.rstrip("*")))
+        return ImageOps.mirror(im) if ref.endswith("*") else im
+
+    cache = {}
     preview = Image.new("RGBA", (W * T, H * T), (0, 0, 0, 255))
-    for name in ("floor", "walls", "furniture", "labels", "above"):
-        for k, gid in enumerate(data[name]):
-            if gid:
-                tile = atlas.images[gid - 1]
-                preview.alpha_composite(tile, ((k % W) * T, (k // W) * T))
+    for name in LAYERS:
+        if name in HIDDEN or name == "floorLayer":
+            continue
+        for y, row in enumerate(m.layers[name]):
+            for x, ref in enumerate(row):
+                if ref:
+                    if ref not in cache:
+                        cache[ref] = tile_of(ref)
+                    preview.alpha_composite(cache[ref], (x * T, y * T))
     preview.convert("RGB").save(ROOT / "preview.png")
     preview.convert("RGB").resize((W * T * 2, H * T * 2), Image.NEAREST).save(ROOT / "preview_2x.png")
 
     overlay = new(W * T, H * T); d = ImageDraw.Draw(overlay)
-    font = ImageFont.truetype("arialbd.ttf", 14)
+    font, small = ImageFont.truetype("arialbd.ttf", 14), ImageFont.truetype("arialbd.ttf", 11)
     for name, x0, y0, x1, y1, props in AREAS:
         box = [x0 * T, y0 * T, (x1 + 1) * T - 1, (y1 + 1) * T - 1]
         col = (255, 140, 40) if "jitsiRoom" in props else (90, 170, 255)
-        d.rectangle(box, fill=col + (70,), outline=col + (255,), width=2)
+        d.rectangle(box, fill=col + (60,), outline=col + (255,), width=2)
         text = f"jitsi: {props['jitsiRoom']}" if "jitsiRoom" in props else "silenciosa"
-        d.text((box[0] + 4, box[1] + 3), text, font=font, fill=(255, 255, 255, 255),
-               stroke_width=2, stroke_fill=(0, 0, 0, 255))
-    for k, gid in enumerate(data["start"]):
-        if gid:
-            x, y = (k % W) * T, (k // W) * T
-            d.rectangle([x, y, x + T - 1, y + T - 1], fill=(60, 220, 120, 110), outline=(60, 220, 120, 255))
-    small = ImageFont.truetype("arialbd.ttf", 11)
-    for name, ex, ey, _ in ENTRIES:
+        d.text((box[0] + 4, box[1] + 3), text, font=font, fill="white", stroke_width=2, stroke_fill="black")
+    for x, y in SPAWN:
+        d.rectangle([x * T, y * T, x * T + T - 1, y * T + T - 1], fill=(60, 220, 120, 110), outline=(60, 220, 120, 255))
+    for name, ex, ey, _ in m.entries:
         x, y = ex * T, ey * T
         d.rectangle([x, y, x + T - 1, y + T - 1], fill=(230, 60, 200, 90), outline=(230, 60, 200, 255), width=2)
-        d.text((x + T // 2, y + T + 1), name, font=small, anchor="mt", fill=(255, 255, 255, 255),
-               stroke_width=2, stroke_fill=(0, 0, 0, 255))
-    preview_areas = preview.copy(); preview_areas.alpha_composite(overlay)
-    preview_areas.convert("RGB").save(ROOT / "preview_areas.png")
+        d.text((x + T // 2, y + T + 1), name, font=small, anchor="mt", fill="white", stroke_width=2, stroke_fill="black")
+    areas = preview.copy(); areas.alpha_composite(overlay)
+    areas.convert("RGB").save(ROOT / "preview_areas.png")
 
     lines = ["# Pontos de entrada", "",
              "Entrada padrão (sem `#`): **recepção** — é onde nascem os convidados.", "",
              "Para a pessoa nascer na própria mesa, use o link do mapa com `#nome-do-ponto` no final,",
              "por exemplo `.../escritorio.tmj#mesa-07`.", "",
              "| Ponto | Onde fica | Pessoa |", "|---|---|---|"]
-    lines += [f"| `{name}` | {desc} | |" for name, _, _, desc in ENTRIES]
+    lines += [f"| `{name}` | {desc} | |" for name, _, _, desc in m.entries]
     (ROOT / "PONTOS_DE_ENTRADA.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    print(f"tiles: {len(atlas.images)}  colisão: {len(atlas.collides)}  áreas: {len(objects)}  entradas: {len(ENTRIES)}")
-    check_reachability(data, set(atlas.collides))
-    check_spacing(layers)
+    print(f"camadas: {len(tmj_layers)}  tiles próprios: {len(custom_refs)}  áreas: {len(objects)}  entradas: {len(m.entries)}")
 
 
-def check_spacing(layers):
-    """Distância mínima (em tiles) entre uma estação de trabalho e qualquer outra cadeira."""
-    furn = layers["furniture"]
-    chairs = [(x, y) for y in range(H) for x in range(W) if (furn[y][x] or "").startswith("chair")]
-    solo = [(x, y) for x, y in chairs if furn[y][x] == "chair_up"
-            or (x > 0 and (furn[y][x - 1] or "").startswith("booth")) or (furn[y][x + 1] or "").startswith("booth")]
-    worst = min(math.hypot(ax - bx, ay - by) for ax, ay in solo for bx, by in chairs if (ax, ay) != (bx, by))
-    print(f"estações individuais: {len(solo)}  menor distância até outra cadeira: {worst:.1f} tiles ({worst * T:.0f} px)")
-    between = min(math.hypot(ax - bx, ay - by) for ax, ay in solo for bx, by in solo if (ax, ay) != (bx, by))
-    print(f"menor distância entre duas estações: {between:.1f} tiles ({between * T:.0f} px)")
+# ------------------------------------------------------------------------ checagens
 
-
-def check_reachability(data, collides):
-    """Confere se, a partir do spawn, dá para chegar em todas as áreas."""
-    blocked = {k for name in ("floor", "walls", "furniture") for k, gid in enumerate(data[name])
-               if gid and gid - 1 in collides}
-    todo = [k for k, gid in enumerate(data["start"]) if gid]
+def check(m):
+    todo = list(SPAWN)
     seen = set(todo)
     while todo:
-        k = todo.pop(); x, y = k % W, k // W
-        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
-            nk = ny * W + nx
-            if 0 <= nx < W and 0 <= ny < H and nk not in seen and nk not in blocked:
-                seen.add(nk); todo.append(nk)
+        x, y = todo.pop()
+        for n in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if 0 <= n[0] < W and 0 <= n[1] < H and n not in seen and n not in m.blocked:
+                seen.add(n); todo.append(n)
     ok = True
-    rooms = [(f"sala {x0},{y0}", x0, y0, x1, y1, None) for x0, y0, x1, y1, _ in ROOMS]
-    for name, x0, y0, x1, y1, _ in AREAS + rooms:
-        cells = [y * W + x for y in range(y0, y1 + 1) for x in range(x0, x1 + 1)]
-        reach = sum(1 for k in cells if k in seen)
-        free = sum(1 for k in cells if k not in blocked)
-        if reach < free:
+    for x0, y0, x1, y1, _ in ROOMS:
+        free = [(x, y) for y in range(y0, y1 + 1) for x in range(x0, x1 + 1) if (x, y) not in m.blocked]
+        lost = [c for c in free if c not in seen]
+        if lost:
             ok = False
-            print(f"  ATENÇÃO {name}: {reach}/{free} tiles livres alcançáveis")
-    for name, ex, ey, _ in ENTRIES:
-        if ey * W + ex not in seen:
+            print(f"  ATENÇÃO sala {x0},{y0}: {len(lost)} tiles livres sem acesso, ex.: {lost[:4]}")
+    for name, ex, ey, _ in m.entries:
+        if (ex, ey) not in seen:
             ok = False
-            print(f"  ATENÇÃO ponto de entrada {name} bloqueado")
+            print(f"  ATENÇÃO ponto de entrada {name} sem acesso ({ex},{ey})")
     print("caminhos: todas as salas e entradas alcançáveis a partir da recepção" if ok else "caminhos: há bloqueios")
+
+    solo = [(x, y, g) for x, y, g in m.chairs if g == "mesa" or g.startswith("baia")]
+    worst = min(math.hypot(ax - bx, ay - by) for ax, ay, _ in solo for bx, by, _ in m.chairs
+                if (ax, ay) != (bx, by))
+    between = min(math.hypot(ax - bx, ay - by) for ax, ay, _ in solo for bx, by, _ in solo if (ax, ay) != (bx, by))
+    print(f"estações: {len(solo)}  menor distância até outra cadeira: {worst:.1f} tiles ({worst * T:.0f} px)  "
+          f"entre estações: {between:.1f} tiles ({between * T:.0f} px)")
 
 
 if __name__ == "__main__":
-    write_outputs(build())
+    mp = build()
+    write_outputs(mp)
+    check(mp)
