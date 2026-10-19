@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Como funciona o escritório</title>
+<style>
+  :root {
+    --ouro: #c49a3c;
+    --ouro-claro: #f3e6c4;
+    --tinta: #2b2a30;
+    --texto: #4a4852;
+    --fundo: #faf8f3;
+    --cartao: #ffffff;
+    --borda: #e6e0d2;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+    background: var(--fundo); color: var(--texto);
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 20px; border-bottom: 1px solid var(--borda); background: var(--cartao);
+  }
+  header img { height: 34px; }
+  header .passo { margin-left: auto; font-size: 13px; color: #8a8578; }
+  main { flex: 1; overflow: auto; padding: 20px; }
+  .slide { display: none; max-width: 760px; margin: 0 auto; }
+  .slide.ativo { display: block; animation: entra .25s ease-out; }
+  @keyframes entra { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  h1 { color: var(--tinta); font-size: 22px; margin: 4px 0 10px; }
+  p { line-height: 1.55; margin: 8px 0; }
+  .figura {
+    margin: 14px 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--borda);
+    background: #1d1c22;
+  }
+  .figura img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+  .dicas { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); margin: 14px 0; }
+  .dica { background: var(--cartao); border: 1px solid var(--borda); border-radius: 10px; padding: 12px 14px; }
+  .dica b { color: var(--tinta); display: block; margin-bottom: 4px; }
+  kbd {
+    display: inline-block; min-width: 22px; padding: 1px 6px; border-radius: 5px; text-align: center;
+    border: 1px solid #cfc7b4; border-bottom-width: 2px; background: #fff; font: 600 12px/1.6 inherit; color: var(--tinta);
+  }
+  .destaque { background: var(--ouro-claro); border-left: 4px solid var(--ouro); padding: 10px 14px; border-radius: 6px; margin: 12px 0; }
+  footer {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 20px; border-top: 1px solid var(--borda); background: var(--cartao);
+  }
+  .pontos { display: flex; gap: 6px; margin-right: auto; }
+  .pontos span { width: 8px; height: 8px; border-radius: 50%; background: #d9d2c1; }
+  .pontos span.ativo { background: var(--ouro); }
+  button {
+    font: 600 14px inherit; padding: 9px 18px; border-radius: 8px; cursor: pointer; border: 1px solid var(--borda);
+    background: var(--cartao); color: var(--tinta);
+  }
+  button.principal { background: var(--ouro); border-color: var(--ouro); color: #fff; }
+  button:disabled { opacity: .4; cursor: default; }
+  @media (max-width: 520px) {
+    main { padding: 14px; }
+    h1 { font-size: 19px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <img src="../assets/maju_logo.png" alt="MAJU Assessoria &amp; Consultoria Empresarial">
+  <span class="passo" id="passo"></span>
+</header>
+
+<main>
+  <section class="slide">
+    <h1>Bem-vindo(a) ao escritório virtual da MAJU</h1>
+    <p>Aqui a equipe trabalha junta mesmo à distância: cada pessoa tem um personagem, e as conversas acontecem como no escritório de verdade, chegando perto de quem você quer falar.</p>
+    <div class="figura"><img src="img/recepcao.png" alt="Recepção do escritório"></div>
+    <p>Este tutorial leva menos de 2 minutos. Você pode revê-lo quando quiser no <b>balcão da recepção</b>.</p>
+  </section>
+
+  <section class="slide">
+    <h1>Como andar</h1>
+    <div class="dicas">
+      <div class="dica"><b>Teclado</b>Use as setas <kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> ou <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd>.</div>
+      <div class="dica"><b>Mouse</b>Clique em um lugar do chão e o personagem anda até lá.</div>
+    </div>
+    <p>Paredes, mesas e plantas bloqueiam a passagem; cadeiras e sofás não, então dá para "sentar" neles.</p>
+  </section>
+
+  <section class="slide">
+    <h1>Conversa por proximidade</h1>
+    <p>Para falar com alguém, <b>chegue perto da pessoa</b>: o áudio e o vídeo de vocês abrem automaticamente numa bolha. Para sair da conversa, é só se afastar.</p>
+    <div class="figura"><img src="img/salao.png" alt="Salão com as mesas de trabalho"></div>
+    <div class="destaque">As mesas do salão são afastadas de propósito: sentado na sua mesa, você não entra na conversa do vizinho. Para falar com um colega, vá até a mesa dele.</div>
+  </section>
+
+  <section class="slide">
+    <h1>Salas de reunião</h1>
+    <p>O escritório tem <b>6 salas de reunião</b> e um <b>auditório</b>. Ao entrar numa delas, a videochamada da sala abre para todos que estão lá dentro. Ao sair da sala, você sai da chamada.</p>
+    <div class="figura"><img src="img/reuniao.png" alt="Salas de reunião"></div>
+    <p>Use as salas para conversas com mais pessoas ou que precisam de privacidade.</p>
+  </section>
+
+  <section class="slide">
+    <h1>Lunchroom e pátio</h1>
+    <div class="figura"><img src="img/lunch.png" alt="Lunchroom"></div>
+    <p>O <b>Lunchroom</b> é uma área silenciosa: lá ninguém entra em conversa, ideal para uma pausa.</p>
+    <div class="figura"><img src="img/patio.png" alt="Pátio externo"></div>
+    <p>Já o <b>pátio</b>, saindo pela porta de baixo à esquerda, é o lugar para um café e uma conversa descontraída.</p>
+  </section>
+
+  <section class="slide">
+    <h1>Onde fica cada coisa</h1>
+    <div class="figura"><img src="img/mapa.png" alt="Mapa completo do escritório"></div>
+    <div class="dicas">
+      <div class="dica"><b>No alto</b>Recepção e auditório.</div>
+      <div class="dica"><b>No centro</b>Salão com as mesas de trabalho.</div>
+      <div class="dica"><b>À direita</b>Escritórios, Lunchroom, Jurídico e Diretoria.</div>
+      <div class="dica"><b>À esquerda e embaixo</b>Salas de reunião e saída para o pátio.</div>
+    </div>
+  </section>
+
+  <section class="slide">
+    <h1>Últimas dicas</h1>
+    <div class="dicas">
+      <div class="dica"><b>Câmera e microfone</b>Ligue e desligue pelos botões da barra inferior.</div>
+      <div class="dica"><b>Status</b>Pelo menu, você pode indicar que está ocupado ou ausente.</div>
+      <div class="dica"><b>Convidados</b>Quem vem de fora chega aqui na recepção.</div>
+    </div>
+    <div class="destaque">Pronto! Pode fechar esta janela e bom trabalho.</div>
+  </section>
+</main>
+
+<footer>
+  <div class="pontos" id="pontos"></div>
+  <button id="voltar">Voltar</button>
+  <button id="avancar" class="principal">Avançar</button>
+</footer>
+
+<script>
+  const slides = [...document.querySelectorAll(".slide")];
+  const pontos = document.getElementById("pontos");
+  const voltar = document.getElementById("voltar");
+  const avancar = document.getElementById("avancar");
+  const passo = document.getElementById("passo");
+  slides.forEach(() => pontos.appendChild(document.createElement("span")));
+  let atual = 0;
+
+  function mostrar(i) {
+    atual = Math.max(0, Math.min(slides.length - 1, i));
+    slides.forEach((s, k) => s.classList.toggle("ativo", k === atual));
+    [...pontos.children].forEach((p, k) => p.classList.toggle("ativo", k === atual));
+    voltar.disabled = atual === 0;
+    avancar.disabled = atual === slides.length - 1;
+    avancar.textContent = atual === slides.length - 2 ? "Última dica" : "Avançar";
+    passo.textContent = `Passo ${atual + 1} de ${slides.length}`;
+    document.querySelector("main").scrollTop = 0;
+  }
+
+  voltar.addEventListener("click", () => mostrar(atual - 1));
+  avancar.addEventListener("click", () => mostrar(atual + 1));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowRight") mostrar(atual + 1);
+    if (e.key === "ArrowLeft") mostrar(atual - 1);
+  });
+  mostrar(0);
+</script>
+</body>
+</html>

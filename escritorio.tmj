@@ -11,7 +11,7 @@
  "tilewidth": 32,
  "tileheight": 32,
  "nextlayerid": 33,
- "nextobjectid": 9,
+ "nextobjectid": 12,
  "properties": [
   {
    "name": "mapName",
@@ -22,6 +22,11 @@
    "name": "mapDescription",
    "type": "string",
    "value": "Escritório virtual"
+  },
+  {
+   "name": "script",
+   "type": "string",
+   "value": "scripts/boas-vindas.js"
   }
  ],
  "layers": [
@@ -27127,6 +27132,43 @@
        "value": true
       }
      ]
+    },
+    {
+     "id": 9,
+     "name": "recepcao",
+     "type": "area",
+     "class": "area",
+     "x": 1408,
+     "y": 96,
+     "width": 448,
+     "height": 256,
+     "rotation": 0,
+     "visible": true,
+     "properties": []
+    },
+    {
+     "id": 10,
+     "name": "balcao",
+     "type": "area",
+     "class": "area",
+     "x": 1536,
+     "y": 192,
+     "width": 224,
+     "height": 64,
+     "rotation": 0,
+     "visible": true,
+     "properties": []
+    },
+    {
+     "id": 11,
+     "name": "popupRecepcao",
+     "type": "",
+     "x": 1568,
+     "y": 96,
+     "width": 160,
+     "height": 64,
+     "rotation": 0,
+     "visible": true
     }
    ],
    "opacity": 1,

@@ -828,6 +828,8 @@ AREAS = (
     # Jitsi só em salas fechadas: a área cobre a sala inteira (quem passa no corredor não entra)
     + [(f"Reunião {i}", x0, y0, x1, y1, {"jitsiRoom": f"reuniao-{i}"}) for i, (x0, y0, x1, y1) in enumerate(MEETING_ROOMS, 1)]
     + [("Lunchroom", 59, 22, 72, 31, {"silent": True})]
+    # usadas pelo script de boas-vindas (scripts/boas-vindas.js)
+    + [("recepcao", 44, 3, 57, 10, {}), ("balcao", 48, 6, 54, 7, {})]
 )
 
 SPAWN = [(x, y) for x in (55, 56) for y in (8, 9)]   # recepção: entrada padrão (convidados)
@@ -1117,6 +1119,9 @@ def write_outputs(layers):
                            for key, val in props.items()],
         })
 
+    objects.append({"id": len(objects) + 1, "name": "popupRecepcao", "type": "", "x": 49 * T, "y": 3 * T,
+                    "width": 5 * T, "height": 2 * T, "rotation": 0, "visible": True})   # âncora do popup
+
     tmj_layers = []
     for lid, name in enumerate(LAYER_ORDER, start=1):
         if name == "floorLayer":
@@ -1141,6 +1146,7 @@ def write_outputs(layers):
         "properties": [
             {"name": "mapName", "type": "string", "value": "Escritório"},
             {"name": "mapDescription", "type": "string", "value": "Escritório virtual"},
+            {"name": "script", "type": "string", "value": "scripts/boas-vindas.js"},
         ],
         "layers": tmj_layers,
         "tilesets": [{
@@ -1164,13 +1170,25 @@ def write_outputs(layers):
     preview.convert("RGB").save(ROOT / "preview.png")
     preview.convert("RGB").resize((W * T * 2, H * T * 2), Image.NEAREST).save(ROOT / "preview_2x.png")
 
+    # imagens do tutorial (trechos do próprio mapa)
+    shots = {"recepcao": (43, 2, 59, 12), "salao": (23, 11, 47, 31), "reuniao": (7, 17, 24, 33),
+             "lunch": (58, 21, 74, 33), "patio": (6, 41, 24, 54)}
+    out_dir = ROOT / "tutorial" / "img"; out_dir.mkdir(parents=True, exist_ok=True)
+    for key, (x0, y0, x1, y1) in shots.items():
+        preview.crop((x0 * T, y0 * T, x1 * T, y1 * T)).convert("RGB").save(out_dir / f"{key}.png")
+    preview.convert("RGB").resize((W * T // 2, H * T // 2), Image.LANCZOS).save(out_dir / "mapa.png")
+
     overlay = new(W * T, H * T); d = ImageDraw.Draw(overlay)
     font = ImageFont.truetype("arialbd.ttf", 14)
     for name, x0, y0, x1, y1, props in AREAS:
         box = [x0 * T, y0 * T, (x1 + 1) * T - 1, (y1 + 1) * T - 1]
-        col = (255, 140, 40) if "jitsiRoom" in props else (90, 170, 255)
-        d.rectangle(box, fill=col + (70,), outline=col + (255,), width=2)
-        text = f"jitsi: {props['jitsiRoom']}" if "jitsiRoom" in props else "silenciosa"
+        if "jitsiRoom" in props:
+            col, text = (255, 140, 40), f"jitsi: {props['jitsiRoom']}"
+        elif props.get("silent"):
+            col, text = (90, 170, 255), "silenciosa"
+        else:
+            col, text = (240, 220, 80), f"script: {name}"
+        d.rectangle(box, fill=col + (50,), outline=col + (255,), width=2)
         d.text((box[0] + 4, box[1] + 3), text, font=font, fill=(255, 255, 255, 255),
                stroke_width=2, stroke_fill=(0, 0, 0, 255))
     for k, gid in enumerate(data["start"]):
