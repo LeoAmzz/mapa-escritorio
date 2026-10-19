@@ -792,12 +792,12 @@ FACE_DECOR = {
 }
 
 WORK_COLS = (26, 31, 36, 41)          # x da mesa (3x2 tiles); a cadeira fica em (x + 1, y + 2)
-WORK_ROWS = (15, 20, 25, 32, 37)      # 3 fileiras no Cível, 2 no Setor Pernambuco
+WORK_ROWS = (15, 20, 25, 32, 37)      # 5 fileiras de 4 mesas no salão
 MEETING_ROWS = (15, 23, 31, 39)       # mesas de reunião do salão (2x2, coluna x 48-49)
 WING_ROWS = (21, 29, 37)              # mesas da ala de reuniões (3x2, x 13-15)
 
-LABELS = [("CÍVEL", 34.5, 29), ("SETOR PERNAMBUCO", 34.5, 41), ("Dra Júlia", 69.5, 20),
-          ("LUNCHROOM", 65.5, 30), ("JURÍDICO - SILVIO", 62.5, 43), ("DIRETORIA", 58, 53),
+LABELS = [("Dra Júlia", 69.5, 20),
+          ("LUNCHROOM", 65.5, 30), ("JURÍDICO - SILVIO", 62.5, 43),
           ("RECEPÇÃO", 50.5, 10)]
 
 LOGO_RUG = (47, 7, 7, 3)              # x, y, largura e altura em tiles (piso da recepção)
@@ -955,8 +955,7 @@ def build():
             for j in range(2):
                 f(x + i, y + j, f"desk:{v}:{i}:{j}")
         f(x + 1, y + 2, "chair_up")
-        setor = "Cível" if y < 30 else "Setor Pernambuco"
-        ENTRIES.append((f"mesa-{k + 1:02d}", x + 1, y + 2, f"{setor}, fileira {WORK_ROWS.index(y) + 1}, "
+        ENTRIES.append((f"mesa-{k + 1:02d}", x + 1, y + 2, f"Salão, fileira {WORK_ROWS.index(y) + 1}, "
                         f"posição {WORK_COLS.index(x) + 1}"))
     for ty in MEETING_ROWS:
         table("white", 48, ty, 49, ty + 1)
