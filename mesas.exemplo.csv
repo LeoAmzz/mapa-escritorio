@@ -1,0 +1,6 @@
+# Copie este arquivo para "mesas.local.csv" e coloque uma pessoa por linha: e-mail;ponto
+# O ponto é o nome da mesa ou sala (veja PONTOS_DE_ENTRADA.md).
+# O mesas.local.csv NÃO vai para o GitHub; no mapa publicado só ficam os e-mails embaralhados (hash).
+# Linhas que começam com # são ignoradas.
+fulano@exemplo.com;mesa-01
+ciclana@exemplo.com;dra-julia

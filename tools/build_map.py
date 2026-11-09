@@ -4,6 +4,7 @@
 Uso:  python tools/build_map.py
 Saída: tilesets/escritorio.png, escritorio.tmj, preview.png, preview_areas.png
 """
+import hashlib
 import json
 import math
 import random
@@ -810,6 +811,7 @@ FACE_DECOR = {
 
 WORK_COLS = (26, 31, 36, 41)          # x da mesa (3x2 tiles); a cadeira fica em (x + 1, y + 2)
 WORK_ROWS = (15, 20, 25, 32, 37)      # 5 fileiras de 4 mesas no salão
+EXTRA_COL = 46                        # 5ª coluna (mesa-21 … mesa-25), numerada depois para não mudar os links antigos
 WING_ROWS = (21, 29, 37)              # mesas das salas de reunião (3x2, x 13-15)
 MEETING_ROOMS = [(8, 18, 22, 24), (8, 26, 22, 32), (8, 34, 22, 40),       # salas da esquerda
                  (24, 46, 31, 55), (33, 46, 39, 55), (41, 46, 48, 55)]     # salas de baixo
@@ -971,17 +973,19 @@ def build():
 
     # salão principal: estações individuais a 5 tiles (160 px) uma da outra
     ENTRIES.clear()
-    for k, (x, y) in enumerate((x, y) for y in WORK_ROWS for x in WORK_COLS):
+    stations = [(x, y) for y in WORK_ROWS for x in WORK_COLS] + [(EXTRA_COL, y) for y in WORK_ROWS]
+    cols = WORK_COLS + (EXTRA_COL,)
+    for k, (x, y) in enumerate(stations):
         v = (k * 3 + y) % 4
         for i in range(3):
             for j in range(2):
                 f(x + i, y + j, f"desk:{v}:{i}:{j}")
         f(x + 1, y + 2, "chair_up")
         ENTRIES.append((f"mesa-{k + 1:02d}", x + 1, y + 2, f"Salão, fileira {WORK_ROWS.index(y) + 1}, "
-                        f"posição {WORK_COLS.index(x) + 1}"))
+                        f"posição {cols.index(x) + 1}"))
     f(28, 13, "cooler"); f(38, 13, "printer"); f(39, 13, "cabinet"); f(51, 13, "cabinet")
     f(57, 13, "plant_big"); f(24, 13, "plant_big"); f(45, 44, "plant"); f(57, 44, "plant_big")
-    f(24, 29, "plant"); f(44, 29, "plant"); f(24, 41, "plant"); f(44, 41, "plant")
+    f(24, 29, "plant"); f(50, 29, "plant"); f(24, 41, "plant"); f(50, 41, "plant")
     rx, ry, rw, rh = LOGO_RUG
     for j in range(rh):
         for i in range(rw):
@@ -1208,13 +1212,59 @@ def write_outputs(layers):
              "Entrada padrão (sem `#`): **recepção** — é onde nascem os convidados.", "",
              "Para a pessoa nascer na própria mesa, use o link do mapa com `#nome-do-ponto` no final,",
              "por exemplo `.../escritorio.tmj#mesa-07`.", "",
-             "| Ponto | Onde fica | Pessoa |", "|---|---|---|"]
-    lines += [f"| `{name}` | {desc} | |" for name, _, _, desc in ENTRIES]
+             "Para a pessoa cair na mesa dela sem link próprio, coloque o e-mail e o ponto em",
+             "`mesas.local.csv` (veja o README). Não escreva nomes ou e-mails aqui: este arquivo é público.", "",
+             "| Ponto | Onde fica |", "|---|---|"]
+    lines += [f"| `{name}` | {desc} |" for name, _, _, desc in ENTRIES]
     (ROOT / "PONTOS_DE_ENTRADA.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    write_desk_table()
 
     print(f"tiles: {len(atlas.images)}  colisão: {len(atlas.collides)}  áreas: {len(objects)}  entradas: {len(ENTRIES)}")
     check_reachability(data, set(atlas.collides))
     check_spacing(layers)
+
+
+# Mesa de cada pessoa. A lista real fica em mesas.local.csv (fora do Git, porque o repositório é
+# público); no mapa publicado vai só o hash do e-mail, que o script scripts/boas-vindas.js compara
+# com o identificador de quem entrou.
+DESK_SALT = "maju-mesas-v1:"
+DESK_CSV = ROOT / "mesas.local.csv"
+DESK_JSON = ROOT / "scripts" / "mesas.json"
+
+
+def desk_hash(ident):
+    return hashlib.sha256((DESK_SALT + ident.strip().lower()).encode("utf-8")).hexdigest()
+
+
+def write_desk_table():
+    pontos = {name: [ex * T + T // 2, ey * T + T // 2] for name, ex, ey, _ in ENTRIES}
+    if DESK_CSV.exists():
+        pessoas, quem = {}, {}
+        for n, raw in enumerate(DESK_CSV.read_text(encoding="utf-8-sig").splitlines(), start=1):
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = [p.strip() for p in line.replace(",", ";").split(";")]
+            if len(parts) != 2 or not parts[0] or not parts[1]:
+                raise SystemExit(f"mesas.local.csv linha {n}: use o formato e-mail;ponto -> {raw!r}")
+            ident, ponto = parts
+            if ponto not in pontos:
+                raise SystemExit(f"mesas.local.csv linha {n}: '{ponto}' não existe (veja PONTOS_DE_ENTRADA.md)")
+            if ponto in quem:
+                print(f"  ATENÇÃO {ponto} está com {quem[ponto]} e com {ident}")
+            quem[ponto] = ident
+            pessoas[desk_hash(ident)] = ponto
+        origem = f"{len(pessoas)} pessoas de mesas.local.csv"
+    else:
+        try:   # sem a lista local (outro PC, por exemplo): mantém a tabela já publicada
+            pessoas = json.loads(DESK_JSON.read_text(encoding="utf-8")).get("pessoas", {})
+        except (OSError, ValueError):
+            pessoas = {}
+        pessoas = {h: p for h, p in pessoas.items() if p in pontos}
+        origem = f"{len(pessoas)} pessoas mantidas da tabela anterior (sem mesas.local.csv)"
+    DESK_JSON.write_text(json.dumps({"sal": DESK_SALT, "pontos": pontos, "pessoas": pessoas},
+                                    ensure_ascii=False, indent=1), encoding="utf-8")
+    print(f"mesas por pessoa: {origem}")
 
 
 def check_spacing(layers):
