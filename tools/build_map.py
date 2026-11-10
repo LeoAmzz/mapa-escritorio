@@ -658,7 +658,7 @@ def label_img(text):
 # ---------------------------------------------------------------- registro de tiles
 
 NON_COLLIDING = ("grass", "dgrass", "flowers", "stone", "wood_", "tile_", "slate", "chair", "sofa",
-                 "armchair", "label", "logo_rug", "tree_top", "start")
+                 "armchair", "label", "logo_rug", "tree_top", "plant_top", "start")
 _big = {}
 
 
@@ -666,6 +666,11 @@ def big(key, fn):
     if key not in _big:
         _big[key] = fn()
     return _big[key]
+
+
+def pixellab(nome):
+    """Peça desenhada no PixelLab (IA de pixel art), guardada em assets/pixellab/."""
+    return big(f"pl-{nome}", lambda: Image.open(ROOT / "assets" / "pixellab" / f"{nome}.png").convert("RGBA"))
 
 
 def crop(im, i, j):
@@ -682,7 +687,9 @@ def make_tile(name):
         "stone": lambda: pavers(C["stone"], C["stone_d"], C["stone_l"]),
         "tile_gray": lambda: pavers(C["tg"], C["tg_d"], C["tg_l"]),
         "slate": lambda: pavers(C["sl"], C["sl_d"], C["sl_l"], 32),
-        "plant": plant, "plant_big": lambda: plant(True),
+        "plant": plant,
+        "plant_big": lambda: crop(pixellab("planta_grande"), 0, 1),    # vaso + folhas de baixo
+        "plant_top": lambda: crop(pixellab("planta_grande"), 0, 0),    # folhas de cima (camada above)
         "chair": lambda: chair(C["chair"], C["chair_d"]),
         "chair_up": lambda: chair(C["chair"], C["chair_d"], facing_up=True),
         "chair_yellow": lambda: chair(C["yellow"], C["yellow_d"]),
@@ -719,7 +726,12 @@ def make_tile(name):
         i = int(arg)
         return crop(big("tree", lambda: outline(tree_big())), i % 2, i // 2 if kind == "tree_top" else 2)
     if kind == "sofa":
-        return crop(big("sofa", lambda: outline(sofa_img(64))), int(arg), 0)
+        return crop(pixellab("sofa"), int(arg), 0)
+    if kind == "meeting_table":              # meeting_table:i:j (3x2)
+        i, j = map(int, arg.split(":"))
+        return crop(pixellab("mesa_reuniao"), i, j)
+    if kind == "reception_desk":             # reception_desk:i (5x1)
+        return crop(pixellab("balcao_recepcao"), int(arg), 0)
     if kind == "table":                      # table:cor:forma:i:j
         color, shape, i, j = arg.split(":")
         w, h = {"9": (96, 96), "h": (96, 32), "v": (32, 96), "s": (32, 32)}[shape]
@@ -962,7 +974,15 @@ def build():
             if "w" in sides: put("furniture", x0 - 1, y, chair_name)
             if "e" in sides: put("furniture", x1 + 1, y, chair_name)
 
-    f = lambda x, y, n: put("furniture", x, y, n)
+    def f(x, y, n):
+        put("furniture", x, y, n)
+        if n == "plant_big":                 # planta alta (1x2): as folhas de cima passam por cima de quem anda atrás
+            put("above", x, y - 1, "plant_top")
+
+    def meeting_table(x0, y0):               # mesa de reunião 3x2 (PixelLab)
+        for j in range(2):
+            for i in range(3):
+                f(x0 + i, y0 + j, f"meeting_table:{i}:{j}")
 
     # auditório
     for y in range(5, 10):
@@ -992,7 +1012,9 @@ def build():
             put("labels", rx + i, ry + j, f"logo_rug:{i}:{j}")
 
     # recepção
-    table("wood", 49, 5, 53, 5); f(51, 4, "chair")
+    for i in range(5):
+        f(49 + i, 5, f"reception_desk:{i}")  # balcão 5x1 (PixelLab)
+    f(51, 4, "chair")
     f(44, 4, "cooler"); f(57, 4, "plant_big"); f(44, 10, "plant"); f(57, 10, "plant")
     f(44, 7, "sofa:0"); f(45, 7, "sofa:1"); f(44, 9, "armchair")
     f(56, 5, "sofa:0"); f(57, 5, "sofa:1")
@@ -1007,11 +1029,11 @@ def build():
 
     # salas de reunião
     for ty in WING_ROWS:
-        table("white", 13, ty, 15, ty + 1)
+        meeting_table(13, ty)
         ring(13, ty, 15, ty + 1, "chair")
     for x0, y0, x1, y1 in MEETING_ROOMS[3:]:                 # salas de baixo: mesa no centro
         tx = (x0 + x1) // 2 - 1
-        table("white", tx, 50, tx + 2, 51)
+        meeting_table(tx, 50)
         ring(tx, 50, tx + 2, 51, "chair")
     for x0, y0, x1, y1 in MEETING_ROOMS:
         f(x0, y0 + 1, "plant_big" if x0 == 8 else "plant"); f(x1, y0 + 1, "plant"); f(x0, y1, "plant"); f(x1, y1, "plant")
