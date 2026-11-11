@@ -669,7 +669,7 @@ def big(key, fn):
 
 
 def pixellab(nome):
-    """Peça desenhada no PixelLab (IA de pixel art), guardada em assets/pixellab/."""
+    """Peça desenhada por IA (PixelLab; sofá e poltrona vieram do Gemini/ChatGPT), guardada em assets/pixellab/."""
     return big(f"pl-{nome}", lambda: Image.open(ROOT / "assets" / "pixellab" / f"{nome}.png").convert("RGBA"))
 
 
@@ -683,7 +683,7 @@ def make_tile(name):
         "wall": wall_top, "cliff": cliff, "bush": lambda: outline(bush()), "cooler": lambda: outline(cooler()), "printer": lambda: outline(printer()),
         "cabinet": lambda: outline(cabinet()), "fridge": fridge, "coffee_table": lambda: outline(coffee_table()), "round_table": lambda: outline(round_table()),
         "booth_l": booth, "booth_r": lambda: ImageOps.mirror(booth()), "sign": lambda: outline(sign()),
-        "armchair": lambda: outline(sofa_img(32)), "start": new,
+        "armchair": lambda: pixellab("poltrona"), "start": new,
         "stone": lambda: pavers(C["stone"], C["stone_d"], C["stone_l"]),
         "tile_gray": lambda: pavers(C["tg"], C["tg_d"], C["tg_l"]),
         "slate": lambda: pavers(C["sl"], C["sl_d"], C["sl_l"], 32),
